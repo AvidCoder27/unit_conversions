@@ -96,8 +96,8 @@ impl Unit {
         }
     }
 
-    pub fn push_edge(&mut self, other_id: usize, conversion: Conversion) {
-        self.edges.insert(other_id, conversion);
+    pub fn push_edge(&mut self, other: &Self, conversion: Conversion) {
+        self.edges.insert(other.get_id(), conversion);
     }
 
     pub fn connected_ids(&self) -> Keys<usize, Conversion> {

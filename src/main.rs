@@ -3,39 +3,14 @@ use graphing::{Conversion, IDGenerator, Step, Unit};
 use std::{collections::{HashMap, VecDeque}, io, usize};
 use fast_float;
 
+const NO_UNIT_ID_ERR: &str = "No unit exists with the given ID";
+
 fn main() {
     let mut generator: IDGenerator = IDGenerator::new();
     let mut unit_ids = HashMap::<usize, Unit>::new();
     let mut aliases = HashMap::<String, usize>::new();
 
-    {
-        let mut yards = Unit::new("yards", &mut generator);
-        let mut feet = Unit::new("feet", &mut generator);
-        let mut meters = Unit::new("meters", &mut generator);
-        let mut kilometers = Unit::new("kilometers", &mut generator);
-
-        insert_aliases(&mut aliases, yards.get_id(), ["yds", "yards", "yard", "yd"].to_vec());
-        insert_aliases(&mut aliases, feet.get_id(), ["foot", "feet", "ft"].to_vec());
-        insert_aliases(&mut aliases, meters.get_id(), ["m", "meters", "meter"].to_vec());
-        insert_aliases(&mut aliases, kilometers.get_id(), ["km", "kilometers", "kilometer"].to_vec());
-
-        let yards_to_feet = Conversion::new(3.0, 1.0);
-        feet.push_edge(yards.get_id(), yards_to_feet.inverse());
-        yards.push_edge(feet.get_id(), yards_to_feet);
-
-        let feet_to_meters = Conversion::new(1.0, 3.28084);
-        meters.push_edge(feet.get_id(), feet_to_meters.inverse());
-        feet.push_edge(meters.get_id(), feet_to_meters);
-
-        let km_to_meters = Conversion::new(1000.0, 1.0);
-        meters.push_edge(kilometers.get_id(), km_to_meters.inverse());
-        kilometers.push_edge(meters.get_id(), km_to_meters);
-
-        yards.insert_into(&mut unit_ids);
-        feet.insert_into(&mut unit_ids);
-        meters.insert_into(&mut unit_ids);
-        kilometers.insert_into(&mut unit_ids);
-    }
+    manually_create_units(&mut generator, &mut aliases, &mut unit_ids);
 
     loop {
         let line = read_input("\nEnter your conversion");
@@ -43,16 +18,45 @@ fn main() {
             break;
         }
 
-        let (value, value_size) = extract_value(&line);
-        let (unit_1, unit_1_size) = extract_unit(&line[value_size..]);
-        let unit_2  = extract_unit(&line[value_size + unit_1_size..]).0;
+        let (value, value_size) = match fast_float::parse_partial::<f64, _>(&line) {
+            Err(_)=> (1.0, 0),
+            Ok(thing) => thing
+        };
+        let (unit_1, unit_1_size) = match extract_unit(&line[value_size..]) {
+            None => {
+                println!("That is not a valid conversion");
+                continue;
+            },
+            Some(thing) => thing
+        };
+        let (unit_2, _)  = match extract_unit(&line[value_size + unit_1_size..]) {
+            None => {
+                println!("That is not a valid conversion");
+                continue;
+            },
+            Some(thing) => thing
+        };
     
         //println!("The conversion to complete is {} {} to {}", value, unit_1, unit_2);
 
-        let unit_1 = aliases.get(&unit_1).expect("No alias exists for the given unit");
-        let unit_2 = aliases.get(&unit_2).expect("No alias exists for the given unit");
-        let unit_1 = unit_ids.get(unit_1).expect("No unit exists with the given id");
-        let unit_2 = unit_ids.get(unit_2).expect("No unit exists with the given id");
+        let unit_1 = match aliases.get(&unit_1) {
+            None => {
+                println!("Unit 1 ({}) is not a valid unit", unit_1);
+                continue;
+            },
+            Some(thing) => thing
+        };
+
+        let unit_2 = match aliases.get(&unit_2) {
+            None => {
+                println!("Unit 2 ({}) is not a valid unit", unit_2);
+                continue;
+            },
+            Some(thing) => thing
+        };
+
+        let unit_1 = unit_ids.get(unit_1).expect(NO_UNIT_ID_ERR);
+        let unit_2 = unit_ids.get(unit_2).expect(NO_UNIT_ID_ERR);
 
         match convert(&value, unit_1, unit_2, &unit_ids, &generator) {
             None => println!("That conversion is impossible!"),
@@ -60,6 +64,49 @@ fn main() {
         }
         println!()
     }
+}
+
+fn manually_create_units(generator: &mut IDGenerator, aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMap<usize, Unit>) {
+    let mut yards = Unit::new("yards", generator);
+    let mut feet = Unit::new("feet", generator);
+    let mut centimeters = Unit::new("centimeters", generator);
+    let mut meters = Unit::new("meters", generator);
+    let mut kilometers = Unit::new("kilometers", generator);
+    let mut inches = Unit::new("inches", generator);
+
+    insert_aliases(aliases, &yards, vec!["yds", "yards", "yard", "yd"]);
+    insert_aliases(aliases, &feet, vec!["foot", "feet", "ft"]);
+    insert_aliases(aliases, &meters, vec!["m", "meters", "meter"]);
+    insert_aliases(aliases, &kilometers, vec!["km", "kilometers", "kilometer"]);
+    insert_aliases(aliases, &inches, vec!["in", "inch", "inches"]);
+    insert_aliases(aliases, &centimeters, vec!["cm", "centimeter"]);
+
+    let yards_to_feet = Conversion::new(3.0, 1.0);
+    feet.push_edge(&yards, yards_to_feet.inverse());
+    yards.push_edge(&feet, yards_to_feet);
+
+    let feet_to_meters = Conversion::new(1.0, 3.28084);
+    meters.push_edge(&feet, feet_to_meters.inverse());
+    feet.push_edge(&meters, feet_to_meters);
+
+    let km_to_meters = Conversion::new(1000.0, 1.0);
+    meters.push_edge(&kilometers, km_to_meters.inverse());
+    kilometers.push_edge(&meters, km_to_meters);
+
+    let inches_to_feet = Conversion::new(1.0, 12.0);
+    feet.push_edge(&inches, inches_to_feet.inverse());
+    inches.push_edge(&feet, inches_to_feet);
+
+    let meters_to_centimeters = Conversion::new(100.0, 1.0);
+    centimeters.push_edge(&meters, meters_to_centimeters.inverse());
+    meters.push_edge(&centimeters, meters_to_centimeters);
+
+    yards.insert_into(unit_ids);
+    feet.insert_into(unit_ids);
+    meters.insert_into(unit_ids);
+    kilometers.insert_into(unit_ids);
+    inches.insert_into(unit_ids);
+    centimeters.insert_into(unit_ids);
 }
 
 fn print_steps(initial_value: f64, starting_unit: &Unit, steps: Vec<Step>, answer: f64, final_unit: &Unit, unit_ids: &HashMap<usize, Unit>) {
@@ -154,29 +201,25 @@ fn find_shortest_path(graph: &Vec<Vec<usize>>, start: usize, destination: usize)
     Some(path)
 }
 
-fn insert_aliases<'a>(aliases: &mut HashMap<String, usize>, unit_id: usize, news: Vec<&str>) {
+fn insert_aliases<'a>(aliases: &mut HashMap<String, usize>, unit: &Unit, news: Vec<&str>) {
     for n in news {
-        aliases.insert(String::from(n), unit_id);
+        aliases.insert(String::from(n), unit.get_id());
     }
 }
 
-fn extract_value(line: &str) -> (f64, usize) {
-    fast_float::parse_partial::<f64, _>(line).expect("Line doesn't have a parseable value")
-}
-
-fn extract_unit(line: &str) -> (String, usize) {
+fn extract_unit(line: &str) -> Option<(String, usize)> {
     let mut unit: String = String::new();
     let mut size: usize = 0;
     for c in line.chars() {
         size += 1;
         if c == '\\' {
-            return (unit.trim().to_string(), size);
+            return Some((unit.trim().to_string(), size));
         } else {
             unit.push(c);
         }
     }
 
-    panic!("Unit needs a terminating \"\\\" (backslash)");
+    None
 }
 
 fn read_input(prompt: &str) -> String {
