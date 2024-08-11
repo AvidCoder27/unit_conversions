@@ -18,7 +18,7 @@ pub struct Step {
     top_value: f64,
     top_id: usize,
     bottom_value: f64,
-    bottom_id: usize
+    bottom_id: usize,
 }
 
 pub struct IDGenerator {
@@ -26,6 +26,9 @@ pub struct IDGenerator {
 }
 
 impl Step {
+
+    const ERROR: &'static str = "UnitIds HashMap must define the ids that the step contains";
+
     pub fn of(conversion: &Conversion, from_id: usize, to_id: usize) -> Self {
         Step{
             top_value: conversion.numerator,
@@ -33,6 +36,15 @@ impl Step {
             top_id: to_id,
             bottom_id: from_id
         }
+    }
+
+    pub fn print(&self, unit_ids: &HashMap<usize, Unit>) {
+        print!(" ( {} {} / {} {} ) ",
+            self.top_value, 
+            unit_ids.get(&self.top_id).expect(Self::ERROR).get_name(), 
+            self.bottom_value,
+            unit_ids.get(&self.bottom_id).expect(Self::ERROR).get_name(), 
+        )
     }
 }
 
@@ -43,13 +55,15 @@ impl IDGenerator {
         }
     }
 
+    /// Returns a new, unique id that is 1 greater than the previous id
     pub fn next(&mut self) -> usize {
         self.id += 1;
-        self.id
+        self.id - 1
     }
 
+    /// Returns the greatest ID that the generator has distributed
     pub fn max(&self) -> usize {
-        self.id
+        self.id - 1
     }
 }
 
@@ -86,12 +100,12 @@ impl Unit {
         self.edges.insert(other_id, conversion);
     }
 
-    pub fn contains_edge_to(&self, goal_id: usize) -> bool {
-        self.edges.contains_key(&goal_id)
+    pub fn connected_ids(&self) -> Keys<usize, Conversion> {
+        self.edges.keys()
     }
 
-    pub fn iter_connected_ids(&self) -> Keys<usize, Conversion> {
-        self.edges.keys()
+    pub fn convert(&self, other_id: usize) -> Option<&Conversion> {
+        self.edges.get(&other_id)
     }
 
     pub fn insert_into(self, graph: &mut HashMap<usize, Unit>) {
@@ -100,6 +114,10 @@ impl Unit {
 
     pub fn get_id(&self) -> usize {
         self.id
+    }
+
+    pub fn get_name(&self) -> &str {
+        self.name.as_str()
     }
 }
 

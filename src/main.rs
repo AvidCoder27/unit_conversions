@@ -1,23 +1,23 @@
 mod graphing;
 use graphing::{Conversion, IDGenerator, Step, Unit};
-use std::{collections::{HashMap,HashSet, VecDeque}, io, usize};
+use std::{collections::{HashMap, VecDeque}, io, usize};
 use fast_float;
 
 fn main() {
-    let mut gen: IDGenerator = IDGenerator::new();
-    let mut graph = HashMap::<usize, Unit>::new();
+    let mut generator: IDGenerator = IDGenerator::new();
+    let mut unit_ids = HashMap::<usize, Unit>::new();
     let mut aliases = HashMap::<String, usize>::new();
 
     {
-        let mut yards = Unit::new("yards", &mut gen);
-        let mut feet = Unit::new("feet", &mut gen);
-        let mut meters = Unit::new("meters", &mut gen);
-        let mut kilometers = Unit::new("kilometers", &mut gen);
+        let mut yards = Unit::new("yards", &mut generator);
+        let mut feet = Unit::new("feet", &mut generator);
+        let mut meters = Unit::new("meters", &mut generator);
+        let mut kilometers = Unit::new("kilometers", &mut generator);
 
-        insert_aliases(&mut aliases, yards.get_id(), ["yds", "yards"].to_vec());
+        insert_aliases(&mut aliases, yards.get_id(), ["yds", "yards", "yard", "yd"].to_vec());
         insert_aliases(&mut aliases, feet.get_id(), ["foot", "feet", "ft"].to_vec());
-        insert_aliases(&mut aliases, meters.get_id(), ["m", "meters"].to_vec());
-        insert_aliases(&mut aliases, kilometers.get_id(), ["km", "kilometers"].to_vec());
+        insert_aliases(&mut aliases, meters.get_id(), ["m", "meters", "meter"].to_vec());
+        insert_aliases(&mut aliases, kilometers.get_id(), ["km", "kilometers", "kilometer"].to_vec());
 
         let yards_to_feet = Conversion::new(3.0, 1.0);
         feet.push_edge(yards.get_id(), yards_to_feet.inverse());
@@ -31,12 +31,14 @@ fn main() {
         meters.push_edge(kilometers.get_id(), km_to_meters.inverse());
         kilometers.push_edge(meters.get_id(), km_to_meters);
 
-        yards.insert_into(&mut graph);
-        feet.insert_into(&mut graph);
+        yards.insert_into(&mut unit_ids);
+        feet.insert_into(&mut unit_ids);
+        meters.insert_into(&mut unit_ids);
+        kilometers.insert_into(&mut unit_ids);
     }
 
     loop {
-        let line = read_input("Enter your conversion");
+        let line = read_input("\nEnter your conversion");
         if line == String::from("quit\\") {
             break;
         }
@@ -45,13 +47,68 @@ fn main() {
         let (unit_1, unit_1_size) = extract_unit(&line[value_size..]);
         let unit_2  = extract_unit(&line[value_size + unit_1_size..]).0;
     
-        println!("The conversion to complete is {} {} to {}", value, unit_1, unit_2);
+        //println!("The conversion to complete is {} {} to {}", value, unit_1, unit_2);
 
         let unit_1 = aliases.get(&unit_1).expect("No alias exists for the given unit");
         let unit_2 = aliases.get(&unit_2).expect("No alias exists for the given unit");
-        let unit_1 = graph.get(unit_1).expect("No unit exists with the given id");
-        let unit_2 = graph.get(unit_2).expect("No unit exists with the given id");
+        let unit_1 = unit_ids.get(unit_1).expect("No unit exists with the given id");
+        let unit_2 = unit_ids.get(unit_2).expect("No unit exists with the given id");
+
+        match convert(&value, unit_1, unit_2, &unit_ids, &generator) {
+            None => println!("That conversion is impossible!"),
+            Some((steps, answer)) => print_steps(value, unit_1, steps, answer, unit_2, &unit_ids)
+        }
+        println!()
     }
+}
+
+fn print_steps(initial_value: f64, starting_unit: &Unit, steps: Vec<Step>, answer: f64, final_unit: &Unit, unit_ids: &HashMap<usize, Unit>) {
+    //println!("The final solution is as follows:");
+    print!("{} {}", initial_value, starting_unit.get_name());
+    for step in steps {
+        step.print(unit_ids);
+    }
+    print!("{} {}", answer, final_unit.get_name());
+}
+
+fn convert(value: &f64, 
+        start: &Unit, 
+        destination: &Unit, 
+        unit_ids: &HashMap<usize, Unit>, 
+        generator: &IDGenerator) -> Option<(Vec<Step>, f64)>
+    {
+    let mut graph = Vec::new();
+    for id in 0..=generator.max() {
+        let mut new_node = Vec::new();
+        for neighbor in unit_ids.get(&id).expect("The UnitIDs HashMap must have an entry for all ids generated").connected_ids() {
+            new_node.push(*neighbor);
+        }
+        graph.push(new_node);
+    }
+
+    let path = match find_shortest_path(&graph, start.get_id(), destination.get_id()) {
+        None => return None,
+        Some(path) => path
+    };
+
+    let mut steps = Vec::<Step>::new();
+    let mut running_answer = *value;
+
+    for (index, this_id) in path.iter().enumerate() {
+        let next_id = match path.get(index + 1) {
+            // eventually we will be on the last id in the path and there is no next one so we break early
+            None => break, 
+            Some(next) => *next
+        };
+        let conversion = unit_ids.get(this_id)
+            .expect("The UnitIDs HashMap must have an entry for all ids in the path")
+            .convert(next_id)
+            .expect("The path must go along units that can convert along the path");
+        running_answer = conversion.apply(running_answer);
+        steps.push(Step::of(conversion, *this_id, next_id));
+    }
+
+    Some((steps, running_answer))
 }
 
 fn bfs(graph: &Vec<Vec<usize>>, start: usize, parent: &mut Vec<usize>, distance: &mut Vec<usize>) {
@@ -90,10 +147,10 @@ fn find_shortest_path(graph: &Vec<Vec<usize>>, start: usize, destination: usize)
     let mut current_node = destination;
     path.push(destination);
     while parent[current_node] != usize::MAX {
-        path.push(parent[current_node])
+        path.push(parent[current_node]);
         current_node = parent[current_node];
     }
-
+    path.reverse();
     Some(path)
 }
 
