@@ -61,9 +61,13 @@ impl IDGenerator {
         self.id - 1
     }
 
-    /// Returns the greatest ID that the generator has distributed
-    pub fn max(&self) -> usize {
-        self.id - 1
+    /// Returns the id that WOULD be next distributed if next() was called
+    pub fn peek(&self) -> usize {
+        self.id
+    }
+
+    pub fn clear(&mut self) {
+        self.id = 0;
     }
 }
 

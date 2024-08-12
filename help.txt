@@ -1,0 +1,17 @@
+There are three types of commands that can be used:
+    1. A conversion is denoted in the following form: [a value, like 1.3] [a unit, like meters] : [a unit to convert into]
+        Example: 1.3 meter : feet
+
+    2. You can register a new unit by typing a '#' and then all the aliases of the unit separated by commas.
+        Example: # meter|s, m
+        Using '|s' at the end of an alias will register the singular and the plural form of the word.
+
+    3. You can register a new conversion by typing a '$' and then an equation that states the conversion factor.
+        Example: $ 1 meter = 100 cm
+        You can use any alias of a unit to define its conversion factor.
+
+There are also a few single word commands:
+    'help' will bring up this page.
+    'list' will print out all the units currently registered.
+    'reload' will reload all units and conversions, deleting user-defined ones.
+    'quit' will quit out of the program.
