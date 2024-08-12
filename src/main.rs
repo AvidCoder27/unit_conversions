@@ -1,72 +1,200 @@
 mod graphing;
 use graphing::{Conversion, IDGenerator, Step, Unit};
-use std::{collections::{HashMap, VecDeque}, io, usize};
+use std::{collections::{HashMap, VecDeque}, fs, io, path::Path};
 use fast_float;
 
 const NO_UNIT_ID_ERR: &str = "No unit exists with the given ID";
 
 fn main() {
+    let file_path = Path::new(r#".\conversions.txt"#);
     let mut generator: IDGenerator = IDGenerator::new();
     let mut unit_ids = HashMap::<usize, Unit>::new();
     let mut aliases = HashMap::<String, usize>::new();
 
-    manually_create_units(&mut generator, &mut aliases, &mut unit_ids);
+    //_load_units_from_file(&mut generator, &mut aliases, &mut unit_ids, file_path);
+    _manually_create_units(&mut generator, &mut aliases, &mut unit_ids);
 
     loop {
         let line = read_input("\nEnter your conversion");
         if line == String::from("quit:") {
             break;
         }
-
-        let (value, value_size) = match fast_float::parse_partial::<f64, _>(&line) {
-            Err(_)=> (1.0, 0),
-            Ok(thing) => thing
-        };
-        let (unit_1, unit_1_size) = match extract_unit(&line[value_size..]) {
-            None => {
-                println!("That is not a valid conversion");
-                continue;
-            },
-            Some(thing) => thing
-        };
-        let (unit_2, _)  = match extract_unit(&line[value_size + unit_1_size..]) {
-            None => {
-                println!("That is not a valid conversion");
-                continue;
-            },
-            Some(thing) => thing
-        };
-    
-        //println!("The conversion to complete is {} {} to {}", value, unit_1, unit_2);
-
-        let unit_1 = match aliases.get(&unit_1) {
-            None => {
-                println!("Unit 1 ({}) is not a valid unit", unit_1);
-                continue;
-            },
-            Some(thing) => thing
-        };
-
-        let unit_2 = match aliases.get(&unit_2) {
-            None => {
-                println!("Unit 2 ({}) is not a valid unit", unit_2);
-                continue;
-            },
-            Some(thing) => thing
-        };
-
-        let unit_1 = unit_ids.get(unit_1).expect(NO_UNIT_ID_ERR);
-        let unit_2 = unit_ids.get(unit_2).expect(NO_UNIT_ID_ERR);
-
-        match convert(&value, unit_1, unit_2, &unit_ids, &generator) {
-            None => println!("That conversion is impossible!"),
-            Some((steps, answer)) => print_steps(value, unit_1, steps, answer, unit_2, &unit_ids)
+        if line == String::from("help:") {
+            print_help_page();
+            continue;
         }
-        println!()
+        if line == String::from("list:") {
+            print_all_units(&generator, &unit_ids);
+            continue;
+        }
+
+        match line.chars().next() {
+            None => panic!("Line must not be empty"),
+            Some('#') => create_unit(&mut generator, &mut aliases, &mut unit_ids, line),
+            Some('$') => create_conversion(&mut aliases, &mut unit_ids, line),
+            _ => attempt_conversion(line, &aliases, &unit_ids, &generator)
+        };
     }
 }
 
-fn manually_create_units(generator: &mut IDGenerator, aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMap<usize, Unit>) {
+fn create_unit(generator: &mut IDGenerator, aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMap<usize, Unit>, line: String) {
+    let mut names: Vec<String> = Vec::new();
+    let mut word = String::new();
+    let mut state: u8 = 0;
+    let mut move_next_word_up = false;
+
+    for c in line.chars() {
+        match state {
+            0 => {
+                assert!(c == '#', "Cannot create unit from a line that does not begin with '#'");
+                state = 1;
+            },
+            1 => {
+                // waiting for a unit alias to begin
+                if c.is_alphabetic() {
+                    word.push(c);
+                    state = 2;
+                }
+            },
+            2.. => {
+                // waiting for a unit alias to end
+                match c {
+                    '|' => {
+                        names.push(word.clone());
+                        move_next_word_up = true;
+                    },
+                    ',' => {
+                        if move_next_word_up {
+                            names.insert(names.len() - 1, word.clone());
+                        } else {
+                            names.push(word.clone());
+                        }
+                        word.clear();
+                        state = 1;
+                    },
+                    ':' => {
+                        break;
+                    }
+                    _ => {
+                        word.push(c);
+                    }
+                };
+            }
+        };
+    }
+    if word.len() > 0 {
+        names.push(word);
+    }
+    
+    let name = names.first().expect("Unit definition must contain at least one alias");
+    let unit = Unit::new(name, generator);
+
+    for n in names.iter() {
+        aliases.insert(n.to_string(), unit.get_id());
+    }
+
+    unit.insert_into(unit_ids);
+    println!("Created new unit {}", name)
+}
+
+fn create_conversion(aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMap<usize, Unit>, line: String) {
+    let line = line.strip_prefix('$').expect("Command for creating conversion must begin with '$'").trim();
+    let (value_1, size) = match fast_float::parse_partial(line) {
+        Err(_) => (1.0, 0),
+        Ok(thing) => thing
+    };
+    let line = &line[size..];
+    let (unit_1, size) = extract_unit(line, '=').expect("Conversion must contain '=' to terminate first half");
+    let line = &line.trim()[size..];
+    let (value_2, size) = match fast_float::parse_partial(line) {
+        Err(_) => (1.0, 0),
+        Ok(thing) => thing
+    };
+    let line = &line[size..];
+    let (unit_2, _) = extract_unit(line, ':').expect("Conversion must contain ':' to terminate second half");
+    let one_to_two = Conversion::new(value_2, value_1);
+
+    let unit_1 = aliases.get(&unit_1).expect("Units used in conversion must be aliased");
+    let unit_2 = aliases.get(&unit_2).expect("Units used in conversion must be aliased");
+    let mut unit_1 = unit_ids.remove(unit_1).expect("UnitIDs must have a definition for units used in conversions");
+    let mut unit_2 = unit_ids.remove(unit_2).expect("UnitIDs must have a definition for units used in conversions");
+    unit_2.push_edge(&unit_1, one_to_two.inverse());
+    unit_1.push_edge(&unit_2, one_to_two);
+    unit_1.insert_into(unit_ids);
+    unit_2.insert_into(unit_ids);
+}
+
+fn _load_units_from_file(generator: &mut IDGenerator, aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMap<usize, Unit>, file_path: &Path) {
+    let file_contents = fs::read_to_string(file_path).expect("File read must not fail");
+    println!("{file_contents}");
+}
+
+fn print_all_units(generator: &IDGenerator, unit_ids: &HashMap<usize, Unit>) {
+    println!("All currently registered units:");
+    for id in 0..=generator.max() {
+        println!("\t{}", unit_ids.get(&id).expect("UnitIDs HashMap must have definitions for all ids generated").get_name());
+    }
+}
+
+fn print_help_page() {
+    println!("There are three types of commands that can be used:");
+    println!("\t1. A conversion is denoted in the following form: [a value, like 1.3] [a unit, like meters] : [a unit to convert into]");
+    println!("\t\tExample: 1.3 meter : feet");
+    println!("\n\t2. You can register a new unit by typing a '#' and then all the aliases of the unit separated by commas.");
+    println!("\t\tExample: # meter|s, m");
+    println!("\t\tUsing '|s' at the end of an alias will register the singular and the plural form of the word.");
+    println!("\n\t3. You can register a new conversion by typing a '$' and then an equation that states the conversion factor.");
+    println!("\t\tExample: $ 1 meter = 100 cm");
+    println!("\t\tYou can use any alias of a unit to define its conversion factor.");
+    println!("\nThere are also a few single word commands:");
+    println!("\t'help' will bring up this page.");
+    println!("\t'list' will print out all the units currently registered.");
+    println!("\t'quit' will quit out of the program.");
+}
+
+fn attempt_conversion(line: String, aliases: &HashMap<String, usize>, unit_ids: &HashMap<usize, Unit>, generator: &IDGenerator) {
+    let (value, value_size) = match fast_float::parse_partial(&line) {
+        Err(_)=> (1.0, 0),
+        Ok(thing) => thing
+    };
+    let (unit_1, unit_1_size) = match extract_unit(&line[value_size..], ':') {
+        None => {
+            println!("That is not a valid conversion");
+            return;
+        },
+        Some(thing) => thing
+    };
+    let (unit_2, _)  = match extract_unit(&line[value_size + unit_1_size..], ':') {
+        None => {
+            println!("That is not a valid conversion");
+            return;
+        },
+        Some(thing) => thing
+    };
+    let unit_1 = match aliases.get(&unit_1) {
+        None => {
+            println!("Unit 1 ({}) is not a valid unit", unit_1);
+            return;
+        },
+        Some(thing) => thing
+    };
+    let unit_2 = match aliases.get(&unit_2) {
+        None => {
+            println!("Unit 2 ({}) is not a valid unit", unit_2);
+            return;
+        },
+        Some(thing) => thing
+    };
+    let unit_1 = unit_ids.get(unit_1).expect(NO_UNIT_ID_ERR);
+    let unit_2 = unit_ids.get(unit_2).expect(NO_UNIT_ID_ERR);
+    match convert(&value, unit_1, unit_2, unit_ids, generator) {
+        None => print!("That conversion is impossible!"),
+        Some((steps, answer)) => print_steps(value, unit_1, steps, answer, unit_2, unit_ids)
+    }
+    println!();
+}
+
+fn _manually_create_units(generator: &mut IDGenerator, aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMap<usize, Unit>) {
     let mut yard = Unit::new("yards", generator);
     let mut foot = Unit::new("feet", generator);
     let mut centimeter = Unit::new("centimeters", generator);
@@ -170,8 +298,10 @@ fn manually_create_units(generator: &mut IDGenerator, aliases: &mut HashMap<Stri
 }
 
 fn print_steps(initial_value: f64, starting_unit: &Unit, steps: Vec<Step>, answer: f64, final_unit: &Unit, unit_ids: &HashMap<usize, Unit>) {
-    //println!("The final solution is as follows:");
     print!("{} {}", initial_value, starting_unit.get_name());
+    if steps.len() == 0 {
+        print!(" is the same as ");
+    }
     for step in steps {
         step.print(unit_ids);
     }
@@ -261,18 +391,18 @@ fn find_shortest_path(graph: &Vec<Vec<usize>>, start: usize, destination: usize)
     Some(path)
 }
 
-fn insert_aliases<'a>(aliases: &mut HashMap<String, usize>, unit: &Unit, news: Vec<&str>) {
+fn insert_aliases(aliases: &mut HashMap<String, usize>, unit: &Unit, news: Vec<&str>) {
     for n in news {
         aliases.insert(String::from(n), unit.get_id());
     }
 }
 
-fn extract_unit(line: &str) -> Option<(String, usize)> {
+fn extract_unit(line: &str, termination_char: char) -> Option<(String, usize)> {
     let mut unit: String = String::new();
     let mut size: usize = 0;
     for c in line.chars() {
         size += 1;
-        if c == ':' {
+        if c == termination_char {
             return Some((unit.trim().to_string(), size));
         } else {
             unit.push(c);
