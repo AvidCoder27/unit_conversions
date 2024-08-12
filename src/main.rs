@@ -6,7 +6,9 @@ use fast_float;
 
 const ERR_ALIASED_ID_UNDEFINED: &str = "UnitIDs HashMap must have a definition for all aliased IDs";
 const ERR_GENERATED_ID_UNDEFINED: &str = "UnitIDs HashMap must have definitions for all generated IDs";
+const ERR_INVALID_CONVERSION: &str = "That is not a valid conversion";
 const ERR_FILE_READ: &str = "File read must not fail";
+const PREV_ANS_KEYWORD: &str = "ans";
 
 fn main() {
     let conversions_file_path = Path::new(r#".\conversions.txt"#);
@@ -14,6 +16,7 @@ fn main() {
     let mut generator: IDGenerator = IDGenerator::new();
     let mut unit_ids = HashMap::<usize, Unit>::new();
     let mut aliases = HashMap::<String, usize>::new();
+    let mut previous_answer: Option<(usize, f64)> = None;
 
     load_units_from_file(&mut generator, &mut aliases, &mut unit_ids, conversions_file_path);
 
@@ -34,6 +37,7 @@ fn main() {
             unit_ids.clear();
             aliases.clear();
             generator.clear();
+            previous_answer = None;
             load_units_from_file(&mut generator, &mut aliases, &mut unit_ids, conversions_file_path);
             println!("Reloaded!");
             continue;
@@ -43,7 +47,10 @@ fn main() {
             None => panic!("Line must not be empty"),
             Some('#') => create_unit(&mut generator, &mut aliases, &mut unit_ids, line, true),
             Some('$') => create_conversion(&mut aliases, &mut unit_ids, line, true),
-            _ => attempt_conversion(line, &aliases, &unit_ids, &generator)
+            _ => match attempt_conversion(line, &aliases, &unit_ids, &generator, previous_answer) {
+                None => {},
+                Some(thing) => previous_answer = Some(thing)
+            }
         };
     }
 }
@@ -204,46 +211,95 @@ fn print_all_units(generator: &IDGenerator, unit_ids: &HashMap<usize, Unit>) {
     }
 }
 
-fn attempt_conversion(line: String, aliases: &HashMap<String, usize>, unit_ids: &HashMap<usize, Unit>, generator: &IDGenerator) {
-    let (value, value_size) = match fast_float::parse_partial(&line) {
-        Err(_)=> (1.0, 0),
-        Ok(thing) => thing
-    };
-    let (unit_1, unit_1_size) = match extract_unit(&line[value_size..], ':') {
+fn attempt_conversion(
+    line: String, 
+    aliases: &HashMap<String, usize>, 
+    unit_ids: &HashMap<usize, Unit>, 
+    generator: &IDGenerator,
+    previous_answer: Option<(usize, f64)>
+    ) -> Option<(usize, f64)>
+    {
+
+    let (value, unit_1, unit_2) = match line.strip_prefix(PREV_ANS_KEYWORD) {
         None => {
-            println!("That is not a valid conversion");
-            return;
+            match extract_value_and_units(line) {
+                Some(value) => value,
+                None => return None,
+            }
         },
-        Some(thing) => thing
+        Some(line) => {
+            let previous_answer = match previous_answer {
+                None => {
+                    println!("Cannot use `{}` because no previous answer exists", PREV_ANS_KEYWORD);
+                    return None;
+                },
+                Some(answer) => answer
+            };
+            let unit_1 = unit_ids.get(&previous_answer.0).expect("Previous answer must contain a valid ID").get_name();
+            let unit_1 = String::from(unit_1);
+
+            let unit_2 = line.trim_start_matches(|c: char| c.is_whitespace() || c == ':');
+            let unit_2 = match extract_unit(unit_2, ':') {
+                None => {
+                    println!("{ERR_INVALID_CONVERSION}");
+                    return None;
+                },
+                Some((unit, _)) => unit
+            };
+            (previous_answer.1, unit_1, unit_2)
+        }
     };
-    let (unit_2, _)  = match extract_unit(&line[value_size + unit_1_size..], ':') {
-        None => {
-            println!("That is not a valid conversion");
-            return;
-        },
-        Some(thing) => thing
-    };
+
     let unit_1 = match aliases.get(&unit_1) {
         None => {
             println!("Unit 1 ({}) is not a valid unit", unit_1);
-            return;
+            return None;
         },
         Some(thing) => thing
     };
     let unit_2 = match aliases.get(&unit_2) {
         None => {
             println!("Unit 2 ({}) is not a valid unit", unit_2);
-            return;
+            return None;
         },
         Some(thing) => thing
     };
     let unit_1 = unit_ids.get(unit_1).expect(ERR_ALIASED_ID_UNDEFINED);
     let unit_2 = unit_ids.get(unit_2).expect(ERR_ALIASED_ID_UNDEFINED);
-    match convert(&value, unit_1, unit_2, unit_ids, generator) {
-        None => print!("That conversion is impossible!"),
-        Some((steps, answer)) => print_steps(value, unit_1, steps, answer, unit_2, unit_ids)
+    return match convert(&value, unit_1, unit_2, unit_ids, generator) {
+        None => {
+            print!("That conversion is impossible!\n");
+            None
+        },
+        Some((steps, answer)) => {
+            print_steps(value, unit_1, steps, answer, unit_2, unit_ids);
+            Some((unit_2.get_id(), answer))
+        }
     }
-    println!();
+}
+
+fn extract_value_and_units(line: String) -> Option<(f64, String, String)> {
+    let (value, size) = match fast_float::parse_partial(&line) {
+        Err(_)=> (1.0, 0),
+        Ok(thing) => thing
+    };
+    let line = &line[size..];
+    let (unit_1, size) = match extract_unit(line, ':') {
+        None => {
+            println!("{ERR_INVALID_CONVERSION}");
+            return None;
+        },
+        Some(thing) => thing
+    };
+    let line = &line[size..];
+    let (unit_2, _)  = match extract_unit(line, ':') {
+        None => {
+            println!("{ERR_INVALID_CONVERSION}");
+            return None;
+        },
+        Some(thing) => thing
+    };
+    Some((value, unit_1, unit_2))
 }
 
 fn print_steps(initial_value: f64, starting_unit: &Unit, steps: Vec<Step>, answer: f64, final_unit: &Unit, unit_ids: &HashMap<usize, Unit>) {
@@ -254,7 +310,7 @@ fn print_steps(initial_value: f64, starting_unit: &Unit, steps: Vec<Step>, answe
     for step in steps {
         step.print(unit_ids);
     }
-    print!("= {} {}", answer, final_unit.get_name());
+    print!(" = {} {}\n", answer, final_unit.get_name());
 }
 
 fn convert(value: &f64, 

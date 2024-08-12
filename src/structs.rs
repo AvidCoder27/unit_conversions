@@ -39,7 +39,7 @@ impl Step {
     }
 
     pub fn print(&self, unit_ids: &HashMap<usize, Unit>) {
-        print!(" ( {} {} / {} {} ) ",
+        print!("({} {} / {} {})",
             self.top_value, 
             unit_ids.get(&self.top_id).expect(Self::ERROR).get_name(), 
             self.bottom_value,
