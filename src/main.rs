@@ -18,7 +18,7 @@ fn main() {
     load_units_from_file(&mut generator, &mut aliases, &mut unit_ids, conversions_file_path);
 
     loop {
-        let line = read_input("\nEnter your conversion:");
+        let line = read_input("\nEnter a command, or `help`");
         if line == String::from("quit:") {
             break;
         }
@@ -254,7 +254,7 @@ fn print_steps(initial_value: f64, starting_unit: &Unit, steps: Vec<Step>, answe
     for step in steps {
         step.print(unit_ids);
     }
-    print!("{} {}", answer, final_unit.get_name());
+    print!("= {} {}", answer, final_unit.get_name());
 }
 
 fn convert(value: &f64, 

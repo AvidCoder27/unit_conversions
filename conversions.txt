@@ -5,7 +5,7 @@
 # meter|s, m
 # kilometer|s, km
 
-# inch|es, inch, in
+# inch|es, in
 # feet, foot, ft
 # yard|s, yd|s
 # furlong|s
@@ -27,3 +27,4 @@ $ 1 nmi = 1852 meters
 
 $ 1 mile = 1.60934 kilometer
 $ 1 inch = 2.54 cm
+$ 4 inch = 1 hand
