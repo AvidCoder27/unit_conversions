@@ -81,11 +81,7 @@ fn create_unit(
                         move_next_word_up = true;
                     },
                     ',' => {
-                        if move_next_word_up {
-                            names.insert(names.len() - 1, word.clone());
-                        } else {
-                            names.push(word.clone());
-                        }
+                        push_word_to_names(move_next_word_up, &mut names, &word);
                         word.clear();
                         state = 1;
                     },
@@ -100,7 +96,7 @@ fn create_unit(
         };
     }
     if word.len() > 0 {
-        names.push(word);
+        push_word_to_names(move_next_word_up, &mut names, &word);
     }
     
     let name = match names.first() {
@@ -119,6 +115,14 @@ fn create_unit(
     unit.insert_into(unit_ids);
     if from_user {
         println!("Created new unit {}", name)
+    }
+}
+
+fn push_word_to_names(move_next_word_up: bool, names: &mut Vec<String>, word: &String) {
+    if move_next_word_up {
+        names.insert(names.len() - 1, word.clone());
+    } else {
+        names.push(word.clone());
     }
 }
 

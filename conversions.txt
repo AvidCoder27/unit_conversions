@@ -11,6 +11,7 @@
 # furlong|s
 # mile|s, mi
 # nautical mile|s, nmi
+# hand|s
 
 $ 1 micrometer = 1000 nanometer
 $ 1 mm = 1000 micrometer
