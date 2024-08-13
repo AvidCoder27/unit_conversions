@@ -38,13 +38,12 @@ impl Step {
         }
     }
 
-    pub fn print(&self, unit_ids: &HashMap<usize, Unit>) {
-        print!("({} {} / {} {})",
-            self.top_value, 
-            unit_ids.get(&self.top_id).expect(Self::ERROR).get_name(), 
-            self.bottom_value,
-            unit_ids.get(&self.bottom_id).expect(Self::ERROR).get_name(), 
-        )
+    pub fn get_top(&self, unit_ids: &HashMap<usize, Unit>) -> String {
+        format!("{} {}", self.top_value, unit_ids.get(&self.top_id).expect(Self::ERROR).get_name())
+    }
+
+    pub fn get_bottom(&self, unit_ids: &HashMap<usize, Unit>) -> String {
+        format!("{} {}", self.bottom_value, unit_ids.get(&self.bottom_id).expect(Self::ERROR).get_name())
     }
 }
 

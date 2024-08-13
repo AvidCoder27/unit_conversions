@@ -303,14 +303,43 @@ fn extract_value_and_units(line: String) -> Option<(f64, String, String)> {
 }
 
 fn print_steps(initial_value: f64, starting_unit: &Unit, steps: Vec<Step>, answer: f64, final_unit: &Unit, unit_ids: &HashMap<usize, Unit>) {
-    print!("{} {} ", initial_value, starting_unit.get_name());
+    let mut bottom = String::new();
+    let mut middle = String::new();
+    let mut top = String::new();
+    
+    let initial = format!("{} {} ", initial_value, starting_unit.get_name());
+    let whitespace = " ".repeat(initial.len());
+    top.push_str(whitespace.as_str());
+    middle.push_str(initial.as_str());
+    bottom.push_str(whitespace.as_str());
+
     if steps.len() == 0 {
-        print!(" is the same as ");
+        todo!()
     }
+
     for step in steps {
-        step.print(unit_ids);
+
+        top.push_str("⎧  ");
+        middle.push_str("|--");
+        bottom.push_str("⎩  ");
+
+        let numer = step.get_top(unit_ids);
+        let denom = step.get_bottom(unit_ids);
+        let size = numer.len().max(denom.len());
+        top.push_str(format!("{: ^size$}", numer).as_str());
+        middle.push_str("-".repeat(size).as_str());
+        bottom.push_str(format!("{: ^size$}", denom).as_str());
+
+        top.push_str("  ⎫");
+        middle.push_str("--|");
+        bottom.push_str("  ⎭");
     }
-    print!(" = {} {}\n", answer, final_unit.get_name());
+
+    middle.push_str(format!(" = {} {}", answer, final_unit.get_name()).as_str());
+
+    println!("\n{top}");
+    println!("{middle}");
+    println!("{bottom}\n");
 }
 
 fn convert(value: &f64, 
