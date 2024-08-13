@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Keys;
 use std::hash::{Hash, Hasher};
+use std::ops::{DivAssign, MulAssign};
 
 #[derive(Clone)]
 pub struct Conversion {
@@ -78,8 +79,9 @@ impl Conversion {
         }
     }
 
-    pub fn apply(&self, value: f64) -> f64 {
-        value * self.numerator / self.denominator
+    pub fn apply(&self, value: &mut f64) {
+        value.mul_assign(self.numerator);
+        value.div_assign(self.denominator);
     }
 
     pub fn inverse(&self) -> Conversion {

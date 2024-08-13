@@ -18,27 +18,33 @@ pub fn bfs(graph: &Vec<Vec<usize>>, start: usize, parent: &mut Vec<usize>, dista
     }
 }
 
-pub fn find_shortest_path(graph: &Vec<Vec<usize>>, start: usize, destination: usize) -> Option<Vec<usize>> {
+/// Finds the shortest path between start and the first end that it connects to.<br>
+/// Returns the path as a vector of the ids in order.<br>
+/// If no paths exists, returns None
+pub fn find_first_shortest_path(graph: &Vec<Vec<usize>>, start: usize, ends: &Vec<usize>) -> Option<Vec<usize>> {
     let v = graph.len();
-    let mut parent = Vec::<usize>::new();
-    let mut distance = Vec::<usize>::new();
+    let mut parent = Vec::new();
+    let mut distance = Vec::new();
     for _ in 0..v {
         parent.push(usize::MAX);
         distance.push(usize::MAX);
     }
     bfs(&graph, start, &mut parent, &mut distance);
 
-    if distance[destination] == usize::MAX {
-        return None;
+    for destination in ends {
+        let destination = *destination;
+        if distance[destination] == usize::MAX {
+            continue;
+        }
+        let mut path = Vec::new();
+        let mut current_node = destination;
+        path.push(destination);
+        while parent[current_node] != usize::MAX {
+            path.push(parent[current_node]);
+            current_node = parent[current_node];
+        }
+        path.reverse();
+        return Some(path)
     }
-
-    let mut path = Vec::<usize>::new();
-    let mut current_node = destination;
-    path.push(destination);
-    while parent[current_node] != usize::MAX {
-        path.push(parent[current_node]);
-        current_node = parent[current_node];
-    }
-    path.reverse();
-    Some(path)
+    None
 }
