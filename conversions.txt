@@ -1,10 +1,9 @@
-# nanometer|s, nm
-# micrometer|s, um
-# millimeter|s, mm
-# centimeter|s, cm
-# meter|s, m
-# kilometer|s, km
-
+# nanometer|s, nm, nanometre|s
+# micrometer|s, um, micrometre|s, micron|s
+# millimeter|s, mm, millimetre|s
+# centimeter|s, cm, centimetre|s
+# meter|s, m, metre|s
+# kilometer|s, km, kilometre|s
 # inch|es, in
 # feet, foot, ft
 # yard|s, yd|s
@@ -12,19 +11,76 @@
 # mile|s, mi
 # nautical mile|s, nmi
 # hand|s
+# light year|s, lyr, ly, lightyear|s
 
 $ 1 micrometer = 1000 nanometer
 $ 1 mm = 1000 micrometer
 $ 1 cm = 10 mm
 $ 1 meter = 100 cm
 $ 1 km = 1000 m
-
 $ 1 foot = 12 inch
 $ 1 yd = 3 feet
 $ 1 furlong = 660 feet
 $ 1 mile = 5280 feet
 $ 1 nmi = 1852 meters
-
 $ 1 mile = 1.60934 kilometer
 $ 1 inch = 2.54 cm
 $ 4 inch = 1 hand
+$ 9.4607304725808e12 km = 1 lightyear
+$ 9460730472580800 m = 1 lightyear
+
+# pound|s, lb|s
+# kilogram|s, kg,
+# gram|s, g
+# milligram|s, mg
+# metric ton|s, megagram|s, Mg, tonne|s
+# long ton|s, british ton|s, imperial ton|s
+# short ton|s, us ton|s
+# ounce|s, oz
+# carrat|s
+
+$ 1 lb = 16 oz
+$ 1 carrat = 0.2 grams
+$ 1000 g = 1 kg
+$ 1000 mg = 1 g
+$ 1000 kg = 1 tonne
+$ 1 long ton = 2240 lbs
+$ 1 short ton = 2000 lbs
+$ 1 kg = 2.2046244202 lbs
+$ 1 long ton = 1.12 short tons
+
+# rankine, Ra
+# kelvin, K
+
+$ 1 kelvin = 1.8 rankine
+
+# nanosecond|s, ns
+# microsecond|s, us
+# millisecond|s, ms
+# second|s, sec|s, s
+# minute|s, min|s
+# hour|s, hr|s
+# day|s
+# month|s
+# calendar year|s, year|s, yr|s
+# decade|s
+# centuries, century
+
+$ 1000 ns = 1 us
+$ 1000 us = 1 ms
+$ 1000 ms = 1 second
+$ 60 sec = 1 min
+$ 60 min = 1 hour
+$ 1 day = 24 hour
+$ 1 month = 30.4167 days
+$ 1 month = 730 hours
+$ 1 calendar year = 365 days
+$ 1 decade = 10 calendar years
+$ 1 century = 100 calendar years
+
+# acre
+# hectare|s, ha
+# square inch|es, sq in
+# square feet, square foot, sq ft
+# square yard|s, sq yd
+# square mile|s, sq mi

@@ -345,46 +345,6 @@ fn print_steps(initial_value: f64, starting_unit: &Unit, steps: Vec<Step>, answe
     println!("{bottom}\n");
 }
 
-fn convert(value: &f64, 
-        start: &Unit, 
-        destination: &Unit, 
-        unit_ids: &HashMap<usize, Unit>, 
-        generator: &IDGenerator) -> Option<(Vec<Step>, f64)>
-    {
-    let mut graph = Vec::new();
-    for id in 0..generator.peek() {
-        let mut new_node = Vec::new();
-        for neighbor in unit_ids.get(&id).expect(ERR_GENERATED_ID_UNDEFINED).connected_ids() {
-            new_node.push(*neighbor);
-        }
-        graph.push(new_node);
-    }
-
-    let path = match algorithm::find_shortest_path(&graph, start.get_id(), destination.get_id()) {
-        None => return None,
-        Some(path) => path
-    };
-
-    let mut steps = Vec::<Step>::new();
-    let mut running_answer = *value;
-
-    for (index, this_id) in path.iter().enumerate() {
-        let next_id = match path.get(index + 1) {
-            // eventually we will be on the last id in the path and there is no next one so we break early
-            None => break, 
-            Some(next) => *next
-        };
-        let conversion = unit_ids.get(this_id)
-            .expect("The UnitIDs HashMap must have an entry for all ids in the path")
-            .convert(next_id)
-            .expect("The path must go along units that can convert along the path");
-        running_answer = conversion.apply(running_answer);
-        steps.push(Step::of(conversion, *this_id, next_id));
-    }
-
-    Some((steps, running_answer))
-}
-
 fn extract_unit(line: &str, termination_char: char) -> Option<(String, usize)> {
     let mut unit: String = String::new();
     let mut size: usize = 0;
@@ -410,4 +370,45 @@ fn read_input(prompt: &str) -> String {
     input = input.trim().to_string();
     input.push(':');
     input
+}
+
+fn convert(value: &f64,
+    start: &Unit,
+    destination: &Unit,
+    unit_ids: &HashMap<usize, Unit>,
+    generator: &IDGenerator) -> Option<(Vec<Step>, f64)>
+{
+    let mut graph = Vec::new();
+    for id in 0..generator.peek() {
+        let mut new_node = Vec::new();
+        for neighbor in unit_ids.get(&id).expect(ERR_GENERATED_ID_UNDEFINED).connected_ids() {
+            new_node.push(*neighbor);
+        }
+        graph.push(new_node);
+    }
+    let graph = graph;
+
+    let path = match algorithm::find_shortest_path(&graph, start.get_id(), destination.get_id()) {
+        None => return None,
+        Some(path) => path
+    };
+
+    let mut steps = Vec::<Step>::new();
+    let mut running_answer = *value;
+
+    for (index, this_id) in path.iter().enumerate() {
+        let next_id = match path.get(index + 1) {
+            // eventually we will be on the last id in the path and there is no next one so we break early
+            None => break, 
+            Some(next) => *next
+        };
+        let conversion = unit_ids.get(this_id)
+            .expect("The UnitIDs HashMap must have an entry for all ids in the path")
+            .convert(next_id)
+            .expect("The path must go along units that can convert along the path");
+        running_answer = conversion.apply(running_answer);
+        steps.push(Step::of(conversion, *this_id, next_id));
+    }
+
+    Some((steps, running_answer))
 }
