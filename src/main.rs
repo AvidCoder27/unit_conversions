@@ -21,7 +21,7 @@ fn main() {
     load_units_from_file(&mut generator, &mut aliases, &mut unit_ids, conversions_file_path);
 
     loop {
-        let line = read_input("\nEnter a command, or `help`");
+        let line = read_input("\nEnter a command, or `help`:");
         if line == String::from("quit:") {
             break;
         }
@@ -303,7 +303,7 @@ fn extract_value_and_units(line: String) -> Option<(f64, String, String)> {
 }
 
 fn print_steps(initial_value: f64, starting_unit: &Unit, steps: Vec<Step>, answer: f64, final_unit: &Unit, unit_ids: &HashMap<usize, Unit>) {
-    print!("{} {}", initial_value, starting_unit.get_name());
+    print!("{} {} ", initial_value, starting_unit.get_name());
     if steps.len() == 0 {
         print!(" is the same as ");
     }
