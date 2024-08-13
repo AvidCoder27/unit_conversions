@@ -307,14 +307,17 @@ fn print_steps(initial_value: f64, starting_unit: &Unit, steps: Vec<Step>, answe
     let mut middle = String::new();
     let mut top = String::new();
     
-    let initial = format!("{} {} ", initial_value, starting_unit.get_name());
-    let whitespace = " ".repeat(initial.len());
-    top.push_str(whitespace.as_str());
-    middle.push_str(initial.as_str());
-    bottom.push_str(whitespace.as_str());
-
-    if steps.len() == 0 {
-        todo!()
+    {
+        let initial = format!("{} {} ", initial_value, starting_unit.get_name());
+        let whitespace = " ".repeat(initial.len());
+        top.push_str(whitespace.as_str());
+        middle.push_str(initial.as_str());
+        bottom.push_str(whitespace.as_str());
+        
+        if steps.len() == 0 {
+            println!("{}is already fully converted.", initial);
+            return;
+        }
     }
 
     for step in steps {
