@@ -319,19 +319,19 @@ fn print_steps(initial_value: f64, starting_unit: &Unit, steps: Vec<Step>, answe
 
     for step in steps {
 
-        top.push_str("⎧  ");
-        middle.push_str("|--");
+        top   .push_str("⎧  ");
+        middle.push_str("⎪⎻⎻");
         bottom.push_str("⎩  ");
 
         let numer = step.get_top(unit_ids);
         let denom = step.get_bottom(unit_ids);
         let size = numer.len().max(denom.len());
         top.push_str(format!("{: ^size$}", numer).as_str());
-        middle.push_str("-".repeat(size).as_str());
+        middle.push_str("⎻".repeat(size).as_str());
         bottom.push_str(format!("{: ^size$}", denom).as_str());
 
-        top.push_str("  ⎫");
-        middle.push_str("--|");
+        top   .push_str("  ⎫");
+        middle.push_str("⎻⎻⎪");
         bottom.push_str("  ⎭");
     }
 
