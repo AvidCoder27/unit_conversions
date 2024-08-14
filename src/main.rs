@@ -10,8 +10,8 @@ const ERR_INVALID_CONVERSION: &str = "That is not a valid conversion";
 const ERR_FILE_READ: &str = "File read must not fail";
 
 fn main() {
-    let conversions_file_path = Path::new(r#".\conversions.txt"#);
-    let help_file_path = Path::new(r#".\help.txt"#);
+    let conversions_file_path = Path::new(r#"./conversions.txt"#);
+    let help_file_path = Path::new(r#"./help.txt"#);
     let mut generator: IDGenerator = IDGenerator::new();
     let mut unit_ids = HashMap::<usize, Unit>::new();
     let mut aliases = HashMap::<String, usize>::new();
