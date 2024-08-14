@@ -256,14 +256,6 @@ fn attempt_conversion(
             Some(thing) => thing
         };
         size += new_size;
-
-        let unit = match aliases.get(&unit) {
-            None => {
-                println!("Invalid Conversion: Unit '{}' is not registered.", unit);
-                return;
-            },
-            Some(id) => *id
-        };
         
         let chosen_vec = match previous_terminator {
             '*' => {
@@ -285,7 +277,28 @@ fn attempt_conversion(
             _ => panic!("Previous terminator must be '*', '/', or ':'")
         };
 
-        chosen_vec.push(unit);
+        let (unit, exponent) = if let Some((prefix, suffix)) = unit.split_once('^') {
+            match i8::from_str_radix(suffix.trim(), 10) {
+                Ok(exponent) => (prefix.to_string(), exponent),
+                Err(error) => {
+                    println!("Invalid Conversion: Improper use of exponent, {}", error);
+                    return;
+                }
+            }
+        } else {
+            (unit, 1)
+        };
+
+        let id = match aliases.get(unit.as_str()) {
+            None => {
+                println!("Invalid Conversion: Unit '{}' is not registered.", unit);
+                return;
+            },
+            Some(id) => *id
+        };
+        for _ in 0..exponent {
+            chosen_vec.push(id);
+        }
         previous_terminator = terminator;
     }
 
