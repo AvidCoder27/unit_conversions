@@ -1,7 +1,7 @@
 mod structs;
 mod algorithm;
 use structs::{Conversion, IDGenerator, Step, Unit};
-use std::{collections::HashMap, fs, io, path::Path};
+use std::{collections::{HashMap, HashSet}, fs, io, path::Path};
 use fast_float;
 
 const ERR_ALIASED_ID_UNDEFINED: &str = "UnitIDs HashMap must have a definition for all aliased IDs";
@@ -133,13 +133,14 @@ fn push_word_to_names(move_next_word_up: bool, names: &mut Vec<String>, word: &S
 }
 
 fn create_conversion(aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMap<usize, Unit>, line: String, from_user: bool) {
+    let colon_hash_set = HashSet::from([':']);
     let line = line.strip_prefix('$').expect("Command for creating conversion must begin with '$'").trim();
     let (value_1, size) = match fast_float::parse_partial(line) {
         Err(_) => (1.0, 0),
         Ok(thing) => thing
     };
     let line = &line[size..];
-    let (unit_1, size) = match extract_unit(line, '=') {
+    let (unit_1, size, _) = match extract_unit(line, &colon_hash_set) {
         None => {
             println!("Conversion must contain '=' to demonstrate equality");
             return;
@@ -152,7 +153,7 @@ fn create_conversion(aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMa
         Ok(thing) => thing
     };
     let line = &line[size..];
-    let (unit_2, _) = extract_unit(line, ':').expect("Conversion must contain ':' to terminate second half");
+    let (unit_2, _, _) = extract_unit(line, &colon_hash_set).expect("Conversion must contain ':' to terminate second half");
     let one_to_two = Conversion::new(value_2, value_1);
 
     let unit_1 = match aliases.get(&unit_1) {
@@ -217,12 +218,6 @@ fn attempt_conversion(
     generator: &IDGenerator,
     previous_answer: &mut Option<String>)
 {
-    let value = 1f64;
-    let starting_numers = Vec::new();
-    let starting_denoms = Vec::new();
-    let ending_numers = Vec::new();
-    let ending_denoms = Vec::new();
-
     // Some really "rusty" code. Here's the breakdown:
     // If the line passed into this function has the prefix "ans", then we see if we have a previous answer
     // If there is a previous answer, then we shadow it with a clone of the internal value and then push the stripped line onto the end
@@ -243,6 +238,33 @@ fn attempt_conversion(
     } else {
         line
     };
+
+    let starting_numers = Vec::new();
+    let starting_denoms = Vec::new();
+    let ending_numers = Vec::new();
+    let ending_denoms = Vec::new();
+    let (value, size) = match fast_float::parse_partial(&line) {
+        Err(_) => (1.0, 0),
+        Ok(thing) => thing
+    };
+    let line = &line[size..];
+    let mut previous_terminator = '*';
+    let mut switched_to_end = false;
+    loop {
+        let (unit, size, terminator) = match extract_unit(line, &HashSet::from([':', '*', '/'])) {
+            None => break,
+            Some(thing) => thing
+        };
+        let line = &line[size..];
+        match previous_terminator {
+            '*' => {},
+            '/' => {},
+            ':' => {},
+            _ => panic!("Previous terminator must be '*', '/', or ':'")
+        };
+        previous_terminator = terminator;
+        todo!() // TODO
+    }
 
     match convert_multiple(unit_ids, generator, &value, &starting_numers, &starting_denoms, &ending_numers, &ending_denoms) {
         None => {
@@ -334,13 +356,13 @@ fn convert_ids_to_string(starting_numers: &Vec<usize>, unit_ids: &HashMap<usize,
     s
 }
 
-fn extract_unit(line: &str, termination_char: char) -> Option<(String, usize)> {
+fn extract_unit(line: &str, termination_chars: &HashSet<char>) -> Option<(String, usize, char)> {
     let mut unit: String = String::new();
     let mut size: usize = 0;
     for c in line.chars() {
         size += 1;
-        if c == termination_char {
-            return Some((unit.trim().to_string(), size));
+        if termination_chars.contains(&c) {
+            return Some((unit.trim().to_string(), size, c));
         } else {
             unit.push(c);
         }
