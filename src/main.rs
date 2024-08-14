@@ -237,11 +237,26 @@ fn attempt_conversion(
         line
     };
 
+    let (value,starting_numers,starting_denoms,ending_numers,ending_denoms) =
+    match extract_value_and_units(line, aliases) {
+        None => return,
+        Some(thing) => thing
+    };
+
+    match convert_multiple(unit_ids, generator, &value, &starting_numers, &starting_denoms, &ending_numers, &ending_denoms) {
+        None => print!("That conversion is impossible!\n"),
+        Some((steps, answer)) => {
+            print_steps(unit_ids, value, answer, steps, &starting_numers, &starting_denoms, &ending_numers, &ending_denoms);
+            previous_answer.replace(convert_quantity_to_string(unit_ids, answer, &ending_numers, &ending_denoms));
+        }
+    }
+}
+
+fn extract_value_and_units(line: String, aliases: &HashMap<String, usize>) -> Option<(f64, Vec<usize>, Vec<usize>, Vec<usize>, Vec<usize>)> {
     let (value, mut size) = match fast_float::parse_partial(&line) {
         Err(_) => (1.0, 0),
         Ok(thing) => thing
     };
-
     let mut starting_numers = Vec::new();
     let mut starting_denoms = Vec::new();
     let mut ending_numers = Vec::new();
@@ -256,7 +271,7 @@ fn attempt_conversion(
             Some(thing) => thing
         };
         size += new_size;
-        
+    
         let chosen_vec = match previous_terminator {
             '*' => {
                 match switched_to_end {
@@ -282,7 +297,7 @@ fn attempt_conversion(
                 Ok(exponent) => (prefix.to_string(), exponent),
                 Err(error) => {
                     println!("Invalid Conversion: Improper use of exponent, {}", error);
-                    return;
+                    return None;
                 }
             }
         } else {
@@ -292,7 +307,7 @@ fn attempt_conversion(
         let id = match aliases.get(unit.as_str()) {
             None => {
                 println!("Invalid Conversion: Unit '{}' is not registered.", unit);
-                return;
+                return None;
             },
             Some(id) => *id
         };
@@ -301,16 +316,7 @@ fn attempt_conversion(
         }
         previous_terminator = terminator;
     }
-
-    match convert_multiple(unit_ids, generator, &value, &starting_numers, &starting_denoms, &ending_numers, &ending_denoms) {
-        None => {
-            print!("That conversion is impossible!\n");
-        },
-        Some((steps, answer)) => {
-            print_steps(unit_ids, value, answer, steps, &starting_numers, &starting_denoms, &ending_numers, &ending_denoms);
-            previous_answer.replace(convert_quantity_to_string(unit_ids, answer, &ending_numers, &ending_denoms));
-        }
-    }
+    Some((value, starting_numers, starting_denoms, ending_numers, ending_denoms))
 }
 
 fn convert_quantity_to_string(unit_ids: &HashMap<usize, Unit>, value: f64, numers: &Vec<usize>, denoms: &Vec<usize>) -> String {

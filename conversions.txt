@@ -78,7 +78,7 @@ $ 1 calendar year = 365 days
 $ 1 decade = 10 calendar years
 $ 1 century = 100 calendar years
 
-# acre
+# acre|s
 # hectare|s, ha
 # square inch|es, sq in
 # square feet, square foot, sq ft
