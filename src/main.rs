@@ -3,10 +3,9 @@ mod algorithm;
 use structs::{Conversion, IDGenerator, Step, Unit};
 use std::{collections::{HashMap, HashSet}, fs, io, path::Path};
 use fast_float;
+use unicode_segmentation::UnicodeSegmentation;
 
-const ERR_ALIASED_ID_UNDEFINED: &str = "UnitIDs HashMap must have a definition for all aliased IDs";
-const ERR_GENERATED_ID_UNDEFINED: &str = "UnitIDs HashMap must have definitions for all generated IDs";
-const ERR_INVALID_CONVERSION: &str = "That is not a valid conversion";
+const ERR_ID_UNDEFINED: &str = "UnitIDs HashMap is missing a definition for an ID";
 const ERR_FILE_READ: &str = "File read must not fail";
 
 fn main() {
@@ -24,18 +23,18 @@ fn main_loop(help_file_path: &Path, mut generator: IDGenerator, mut unit_ids: Ha
     let mut previous_answer: Option<String> = None;
     loop {
         let line = read_input("\nEnter a command, or `help`:");
-        if line == String::from("quit:") {
+        if line == String::from("quit;") {
             break;
         }
-        if line == String::from("help:") {
+        if line == String::from("help;") {
             print_help_page(help_file_path);
             continue;
         }
-        if line == String::from("list:") {
+        if line == String::from("list;") {
             print_all_units(&generator, &unit_ids);
             continue;
         }
-        if line == String::from("reload:") {
+        if line == String::from("reload;") {
             unit_ids.clear();
             aliases.clear();
             generator.clear();
@@ -91,7 +90,7 @@ fn create_unit(
                         word.clear();
                         state = 1;
                     },
-                    ':' => {
+                    ';' => {
                         break;
                     }
                     _ => {
@@ -133,14 +132,13 @@ fn push_word_to_names(move_next_word_up: bool, names: &mut Vec<String>, word: &S
 }
 
 fn create_conversion(aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMap<usize, Unit>, line: String, from_user: bool) {
-    let colon_hash_set = HashSet::from([':']);
     let line = line.strip_prefix('$').expect("Command for creating conversion must begin with '$'").trim();
     let (value_1, size) = match fast_float::parse_partial(line) {
         Err(_) => (1.0, 0),
         Ok(thing) => thing
     };
     let line = &line[size..];
-    let (unit_1, size, _) = match extract_unit(line, &colon_hash_set) {
+    let (unit_1, size, _) = match extract_unit(line, &HashSet::from(['='])) {
         None => {
             println!("Conversion must contain '=' to demonstrate equality");
             return;
@@ -153,7 +151,7 @@ fn create_conversion(aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMa
         Ok(thing) => thing
     };
     let line = &line[size..];
-    let (unit_2, _, _) = extract_unit(line, &colon_hash_set).expect("Conversion must contain ':' to terminate second half");
+    let (unit_2, _, _) = extract_unit(line, &HashSet::from([';'])).expect("Conversion must contain ';' to terminate second half");
     let one_to_two = Conversion::new(value_2, value_1);
 
     let unit_1 = match aliases.get(&unit_1) {
@@ -170,8 +168,8 @@ fn create_conversion(aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMa
         },
         Some(thing) => thing
     };
-    let mut unit_1 = unit_ids.remove(unit_1).expect(ERR_ALIASED_ID_UNDEFINED);
-    let mut unit_2 = unit_ids.remove(unit_2).expect(ERR_ALIASED_ID_UNDEFINED);
+    let mut unit_1 = unit_ids.remove(unit_1).expect(ERR_ID_UNDEFINED);
+    let mut unit_2 = unit_ids.remove(unit_2).expect(ERR_ID_UNDEFINED);
     if from_user {
         println!("Created conversion between {} and {}", unit_1.get_name(), unit_2.get_name());
     }
@@ -190,7 +188,7 @@ fn load_units_from_file(
     let contents = fs::read_to_string(file_path).expect(ERR_FILE_READ);
     for line in contents.lines() {
         let mut line = line.to_string();
-        line.push(':');
+        line.push(';');
         match line.chars().next() {
             Some('#') => create_unit(&mut generator, &mut aliases, &mut unit_ids, line, false),
             Some('$') => create_conversion(&mut aliases, &mut unit_ids, line, false),
@@ -207,7 +205,7 @@ fn print_help_page(file_path: &Path) {
 fn print_all_units(generator: &IDGenerator, unit_ids: &HashMap<usize, Unit>) {
     println!("All currently registered units:");
     for id in 0..generator.peek() {
-        println!("\t{}: {}", id, unit_ids.get(&id).expect(ERR_GENERATED_ID_UNDEFINED).get_name());
+        println!("\t{}: {}", id, unit_ids.get(&id).expect(ERR_ID_UNDEFINED).get_name());
     }
 }
 
@@ -239,31 +237,56 @@ fn attempt_conversion(
         line
     };
 
-    let starting_numers = Vec::new();
-    let starting_denoms = Vec::new();
-    let ending_numers = Vec::new();
-    let ending_denoms = Vec::new();
-    let (value, size) = match fast_float::parse_partial(&line) {
+    let (value, mut size) = match fast_float::parse_partial(&line) {
         Err(_) => (1.0, 0),
         Ok(thing) => thing
     };
-    let line = &line[size..];
+
+    let mut starting_numers = Vec::new();
+    let mut starting_denoms = Vec::new();
+    let mut ending_numers = Vec::new();
+    let mut ending_denoms = Vec::new();
     let mut previous_terminator = '*';
     let mut switched_to_end = false;
     loop {
-        let (unit, size, terminator) = match extract_unit(line, &HashSet::from([':', '*', '/'])) {
+        let line = &line[size..];
+        let (unit, new_size, terminator) = 
+        match extract_unit(line, &HashSet::from([';', ':', '*', '/'])) {
             None => break,
             Some(thing) => thing
         };
-        let line = &line[size..];
-        match previous_terminator {
-            '*' => {},
-            '/' => {},
-            ':' => {},
+        size += new_size;
+
+        let unit = match aliases.get(&unit) {
+            None => {
+                println!("Invalid Conversion: Unit '{}' is not registered.", unit);
+                return;
+            },
+            Some(id) => *id
+        };
+        
+        let chosen_vec = match previous_terminator {
+            '*' => {
+                match switched_to_end {
+                    false => &mut starting_numers, 
+                    true => &mut ending_numers,
+                }
+            },
+            '/' => {
+                match switched_to_end {
+                    false => &mut starting_denoms,
+                    true  => &mut ending_denoms,
+                }
+            },
+            ':' => {
+                switched_to_end = true;
+                &mut ending_numers
+            }
             _ => panic!("Previous terminator must be '*', '/', or ':'")
         };
+
+        chosen_vec.push(unit);
         previous_terminator = terminator;
-        todo!() // TODO
     }
 
     match convert_multiple(unit_ids, generator, &value, &starting_numers, &starting_denoms, &ending_numers, &ending_denoms) {
@@ -272,9 +295,28 @@ fn attempt_conversion(
         },
         Some((steps, answer)) => {
             print_steps(unit_ids, value, answer, steps, &starting_numers, &starting_denoms, &ending_numers, &ending_denoms);
-            previous_answer.replace(todo!());
+            previous_answer.replace(convert_quantity_to_string(unit_ids, answer, &ending_numers, &ending_denoms));
         }
     }
+}
+
+fn convert_quantity_to_string(unit_ids: &HashMap<usize, Unit>, value: f64, numers: &Vec<usize>, denoms: &Vec<usize>) -> String {
+    let mut numer_iter = numers.iter();
+    let numer = numer_iter.next().expect("Quantity must have at least one numerator unit");
+    let numer = unit_ids.get(numer).expect(ERR_ID_UNDEFINED);
+
+    let mut s = value.to_string();
+    s.push(' ');
+    s.push_str(numer.get_name());
+    for numer in numer_iter {
+        let numer = unit_ids.get(numer).expect(ERR_ID_UNDEFINED);
+        s.push_str(format!(" * {}", numer.get_name()).as_str());
+    }
+    for denom in denoms {
+        let denom = unit_ids.get(denom).expect(ERR_ID_UNDEFINED);
+        s.push_str(format!(" / {}", denom.get_name()).as_str());
+    }
+    s
 }
 
 fn print_steps(unit_ids: &HashMap<usize, Unit>, 
@@ -292,7 +334,7 @@ fn print_steps(unit_ids: &HashMap<usize, Unit>,
 
     let numer = format!("{} {}", initial_value, convert_ids_to_string(starting_numers, unit_ids));
     if starting_denoms.len() == 0 {
-        let whitespace = " ".repeat(numer.len());
+        let whitespace = " ".repeat(numer.graphemes(true).count());
         top.push_str(whitespace.as_str());
         middle.push_str(numer.as_str());
         bottom.push_str(whitespace.as_str());
@@ -313,10 +355,10 @@ fn print_steps(unit_ids: &HashMap<usize, Unit>,
 
     let numer = format!("{} {}", answer, convert_ids_to_string(ending_numers, unit_ids));
     if ending_denoms.len() == 0 {
-        let whitespace = " ".repeat(numer.len());
-        top.push_str(whitespace.as_str());
+        // let whitespace = " ".repeat(numer.len());
+        // top.push_str(whitespace.as_str());
         middle.push_str(numer.as_str());
-        bottom.push_str(whitespace.as_str());
+        // bottom.push_str(whitespace.as_str());
     } else {
         let denom = convert_ids_to_string(ending_denoms, unit_ids);
         push_fraction(&mut top, &mut middle, &mut bottom, numer, denom);
@@ -347,11 +389,11 @@ fn convert_ids_to_string(starting_numers: &Vec<usize>, unit_ids: &HashMap<usize,
     let mut s = String::from(
         unit_ids.get(iter.next()
         .expect("Must have at least one unit in the numerator"))
-        .expect(ERR_GENERATED_ID_UNDEFINED).get_name());
+        .expect(ERR_ID_UNDEFINED).get_name());
 
     for id in iter {
         s.push_str(" × ");
-        s.push_str(unit_ids.get(id).expect(ERR_GENERATED_ID_UNDEFINED).get_name());
+        s.push_str(unit_ids.get(id).expect(ERR_ID_UNDEFINED).get_name());
     }
     s
 }
@@ -379,7 +421,7 @@ fn read_input(prompt: &str) -> String {
         Err(_) => {}
     }
     input = input.trim().to_string();
-    input.push(':');
+    input.push(';');
     input
 }
 
@@ -408,7 +450,7 @@ fn convert_multiple(unit_ids: &HashMap<usize, Unit>,
     let mut graph = Vec::new();
     for id in 0..generator.peek() {
         let mut new_node = Vec::new();
-        for neighbor in unit_ids.get(&id).expect(ERR_GENERATED_ID_UNDEFINED).connected_ids() {
+        for neighbor in unit_ids.get(&id).expect(ERR_ID_UNDEFINED).connected_ids() {
             new_node.push(*neighbor);
         }
         graph.push(new_node);
