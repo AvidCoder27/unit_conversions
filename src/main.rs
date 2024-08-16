@@ -253,7 +253,7 @@ fn attempt_conversion(
 }
 
 fn extract_value_and_units(line: String, aliases: &HashMap<String, usize>) -> Option<(f64, Vec<usize>, Vec<usize>, Vec<usize>, Vec<usize>)> {
-    let (value, mut size) = match fast_float::parse_partial(&line) {
+    let (mut value, mut size) = match fast_float::parse_partial(&line) {
         Err(_) => (1.0, 0),
         Ok(thing) => thing
     };
@@ -272,28 +272,8 @@ fn extract_value_and_units(line: String, aliases: &HashMap<String, usize>) -> Op
         };
         size += new_size;
     
-        let chosen_vec = match previous_terminator {
-            '*' => {
-                match switched_to_end {
-                    false => &mut starting_numers, 
-                    true => &mut ending_numers,
-                }
-            },
-            '/' => {
-                match switched_to_end {
-                    false => &mut starting_denoms,
-                    true  => &mut ending_denoms,
-                }
-            },
-            ':' => {
-                switched_to_end = true;
-                &mut ending_numers
-            }
-            _ => panic!("Previous terminator must be '*', '/', or ':'")
-        };
-
         let (unit, exponent) = if let Some((prefix, suffix)) = unit.split_once('^') {
-            match i8::from_str_radix(suffix.trim(), 10) {
+            match i32::from_str_radix(suffix.trim(), 10) {
                 Ok(exponent) => (prefix.to_string(), exponent),
                 Err(error) => {
                     println!("Invalid Conversion: Improper use of exponent, {}", error);
@@ -304,18 +284,52 @@ fn extract_value_and_units(line: String, aliases: &HashMap<String, usize>) -> Op
             (unit, 1)
         };
 
-        let id = match aliases.get(unit.as_str()) {
-            None => {
-                println!("Invalid Conversion: Unit '{}' is not registered.", unit);
+        // if the unit is actually a float/number, then we raise it to exponent and then multiply/divide it onto value
+        if let Ok(another_value) = fast_float::parse::<f64, &str>(unit.as_str()) {
+            if switched_to_end || previous_terminator == ':' {
+                println!("Invalid Conversion: Improper placement of a number after the separating colon");
                 return None;
-            },
-            Some(id) => *id
-        };
-        for _ in 0..exponent {
-            chosen_vec.push(id);
+            }
+            match previous_terminator {
+                '*' => value *= another_value.powi(exponent),
+                '/' => value /= another_value.powi(exponent),
+                _ => panic!("Previous terminator must be '*', '/' when calculating another_value, was `{}`", previous_terminator)
+            }
+        } else {
+            let chosen_vec = match previous_terminator {
+                '*' => {
+                    match switched_to_end {
+                        false => &mut starting_numers, 
+                        true => &mut ending_numers,
+                    }
+                },
+                '/' => {
+                    match switched_to_end {
+                        false => &mut starting_denoms,
+                        true  => &mut ending_denoms,
+                    }
+                },
+                ':' => {
+                    switched_to_end = true;
+                    &mut ending_numers
+                }
+                _ => panic!("Previous terminator must be '*', '/', or ':'")
+            };
+    
+            let id = match aliases.get(unit.as_str()) {
+                None => {
+                    println!("Invalid Conversion: Unit '{}' is not registered.", unit);
+                    return None;
+                },
+                Some(id) => *id
+            };
+            for _ in 0..exponent {
+                chosen_vec.push(id);
+            }
         }
         previous_terminator = terminator;
     }
+        
     Some((value, starting_numers, starting_denoms, ending_numers, ending_denoms))
 }
 
@@ -463,8 +477,8 @@ fn convert_multiple(unit_ids: &HashMap<usize, Unit>,
     ending_denoms: &Vec<usize>,
 ) -> Option<(Vec<Step>, f64)>
 {
-    debug_assert!(starting_numers.len() == ending_numers.len(), "Starting and ending numerators must be equal in length");
-    debug_assert!(starting_denoms.len() == starting_denoms.len(), "Starting and ending denominators must be equal in length");
+    debug_assert!(starting_numers.len() == ending_numers.len(), "Starting and ending numerators must be equal in length, start:{}, end:{}", starting_numers.len(), ending_numers.len());
+    debug_assert!(starting_denoms.len() == starting_denoms.len(), "Starting and ending denominators must be equal in length, start:{}, end:{}", starting_denoms.len(), ending_denoms.len());
 
     let mut graph = Vec::new();
     for id in 0..generator.peek() {
