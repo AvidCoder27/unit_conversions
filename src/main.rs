@@ -19,7 +19,13 @@ fn main() {
     main_loop(help_file_path, generator, unit_ids, aliases, conversions_file_path);
 }
 
-fn main_loop(help_file_path: &Path, mut generator: IDGenerator, mut unit_ids: HashMap<usize, Unit>, mut aliases: HashMap<String, usize>, conversions_file_path: &Path) {
+fn main_loop(
+    help_file_path: &Path,
+    mut generator: IDGenerator,
+    mut unit_ids: HashMap<usize, Unit>,
+    mut aliases: HashMap<String, usize>,
+    conversions_file_path: &Path)
+{
     let mut previous_answer: Option<String> = None;
     loop {
         let line = read_input("\nEnter a command, or `help`:");
@@ -58,8 +64,16 @@ fn create_unit(
     aliases: &mut HashMap<String, usize>, 
     unit_ids: &mut HashMap<usize, Unit>, 
     line: String, 
-    from_user: bool) 
-    {
+    from_user: bool)
+{
+    fn push_word_to_names(move_next_word_up: bool, names: &mut Vec<String>, word: &String) {
+        if move_next_word_up {
+            names.insert(names.len() - 1, word.clone());
+        } else {
+            names.push(word.clone());
+        }
+    }
+
     let mut names: Vec<String> = Vec::new();
     let mut word = String::new();
     let mut state: u8 = 0;
@@ -123,14 +137,6 @@ fn create_unit(
     }
 }
 
-fn push_word_to_names(move_next_word_up: bool, names: &mut Vec<String>, word: &String) {
-    if move_next_word_up {
-        names.insert(names.len() - 1, word.clone());
-    } else {
-        names.push(word.clone());
-    }
-}
-
 fn create_conversion(aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMap<usize, Unit>, line: String, from_user: bool) {
     let line = line.strip_prefix('$').expect("Command for creating conversion must begin with '$'").trim();
     let (value_1, size) = match fast_float::parse_partial(line) {
@@ -179,36 +185,6 @@ fn create_conversion(aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMa
     unit_2.insert_into(unit_ids);
 }
 
-fn load_units_from_file(
-    mut generator: &mut IDGenerator, 
-    mut aliases: &mut HashMap<String, usize>, 
-    mut unit_ids: &mut HashMap<usize, Unit>, 
-    file_path: &Path) 
-    {
-    let contents = fs::read_to_string(file_path).expect(ERR_FILE_READ);
-    for line in contents.lines() {
-        let mut line = line.to_string();
-        line.push(';');
-        match line.chars().next() {
-            Some('#') => create_unit(&mut generator, &mut aliases, &mut unit_ids, line, false),
-            Some('$') => create_conversion(&mut aliases, &mut unit_ids, line, false),
-            _ => continue
-        };
-    }
-}
-
-fn print_help_page(file_path: &Path) {
-    let contents = fs::read_to_string(file_path).expect(ERR_FILE_READ);
-    print!("{contents}");
-}
-
-fn print_all_units(generator: &IDGenerator, unit_ids: &HashMap<usize, Unit>) {
-    println!("All currently registered units:");
-    for id in 0..generator.peek() {
-        println!("\t{}: {}", id, unit_ids.get(&id).expect(ERR_ID_UNDEFINED).get_name());
-    }
-}
-
 fn attempt_conversion(
     line: String, 
     aliases: &HashMap<String, usize>, 
@@ -252,11 +228,10 @@ fn attempt_conversion(
     }
 }
 
-fn extract_value_and_units(line: String, aliases: &HashMap<String, usize>) -> Option<(f64, Vec<usize>, Vec<usize>, Vec<usize>, Vec<usize>)> {
-    let (mut value, mut size) = match fast_float::parse_partial(&line) {
-        Err(_) => (1.0, 0),
-        Ok(thing) => thing
-    };
+fn extract_value_and_units(line: String, aliases: &HashMap<String, usize>
+) -> Option<(f64, Vec<usize>, Vec<usize>, Vec<usize>, Vec<usize>)> {
+    let mut running_value = 1f64;
+    let mut size = 0;
     let mut starting_numers = Vec::new();
     let mut starting_denoms = Vec::new();
     let mut ending_numers = Vec::new();
@@ -264,73 +239,95 @@ fn extract_value_and_units(line: String, aliases: &HashMap<String, usize>) -> Op
     let mut previous_terminator = '*';
     let mut switched_to_end = false;
     loop {
-        let line = &line[size..];
-        let (unit, new_size, terminator) = 
+        let line = line[size..].trim();
+        // extract a value before the unit if it is there
+        let (next_value, value_size) = match fast_float::parse_partial(&line) {
+            Err(_) => (1f64, 0),
+            Ok(thing) => {
+                if switched_to_end {
+                    println!("Invalid Conversion: Improper placement of number after the separating ':'");
+                    return None;
+                }
+                thing
+            }
+        };
+        let line = line[value_size..].trim();
+        let (unit, unit_size, next_terminator) = 
         match extract_unit(line, &HashSet::from([';', ':', '*', '/'])) {
             None => break,
             Some(thing) => thing
         };
-        size += new_size;
-    
-        let (unit, exponent) = if let Some((prefix, suffix)) = unit.split_once('^') {
-            match i32::from_str_radix(suffix.trim(), 10) {
-                Ok(exponent) => (prefix.to_string(), exponent),
-                Err(error) => {
-                    println!("Invalid Conversion: Improper use of exponent, {}", error);
-                    return None;
-                }
-            }
-        } else {
-            (unit, 1)
-        };
-
-        // if the unit is actually a float/number, then we raise it to exponent and then multiply/divide it onto value
-        if let Ok(another_value) = fast_float::parse::<f64, &str>(unit.as_str()) {
-            if switched_to_end || previous_terminator == ':' {
-                println!("Invalid Conversion: Improper placement of a number after the separating colon");
+        if unit.len() > 0 {
+            if !process_and_push_unit(unit, aliases, next_value, previous_terminator, &mut switched_to_end, &mut starting_numers, &mut ending_numers, &mut starting_denoms, &mut ending_denoms) {
                 return None;
             }
-            match previous_terminator {
-                '*' => value *= another_value.powi(exponent),
-                '/' => value /= another_value.powi(exponent),
-                _ => panic!("Previous terminator must be '*', '/' when calculating another_value, was `{}`", previous_terminator)
-            }
-        } else {
-            let chosen_vec = match previous_terminator {
-                '*' => {
-                    match switched_to_end {
-                        false => &mut starting_numers, 
-                        true => &mut ending_numers,
-                    }
-                },
-                '/' => {
-                    match switched_to_end {
-                        false => &mut starting_denoms,
-                        true  => &mut ending_denoms,
-                    }
-                },
-                ':' => {
-                    switched_to_end = true;
-                    &mut ending_numers
-                }
-                _ => panic!("Previous terminator must be '*', '/', or ':'")
-            };
-    
-            let id = match aliases.get(unit.as_str()) {
-                None => {
-                    println!("Invalid Conversion: Unit '{}' is not registered.", unit);
-                    return None;
-                },
-                Some(id) => *id
-            };
-            for _ in 0..exponent {
-                chosen_vec.push(id);
+        }
+        if next_value != 1f64 {
+            running_value *= match previous_terminator {
+                '*' => next_value,
+                '/' => next_value.recip(),
+                _ => panic!("Previous Terminator must be '*' or '/' when updating running_value")
             }
         }
-        previous_terminator = terminator;
+        size += unit_size + value_size;
+        previous_terminator = next_terminator;
     }
         
-    Some((value, starting_numers, starting_denoms, ending_numers, ending_denoms))
+    Some((running_value, starting_numers, starting_denoms, ending_numers, ending_denoms))
+}
+
+fn process_and_push_unit(
+    unit: String,
+    aliases: &HashMap<String, usize>,
+    next_value: f64,
+    previous_terminator: char,
+    switched_to_end: &mut bool,
+    starting_numers: &mut Vec<usize>,
+    ending_numers: &mut Vec<usize>,
+    starting_denoms: &mut Vec<usize>,
+    ending_denoms: &mut Vec<usize>
+) -> bool {
+    let (unit, exponent) = if let Some((prefix, suffix)) = unit.split_once('^') {
+        match i32::from_str_radix(suffix.trim(), 10) {
+            Ok(exponent) => (prefix.to_string(), exponent),
+            Err(error) => {
+                println!("Invalid Conversion: Improper use of exponent, {}", error);
+                return false;
+            }
+        }
+    } else {
+        (unit, 1)
+    };
+    let id = match aliases.get(unit.as_str()) {
+        None => {
+            println!("Invalid Conversion: Unit '{}' is not registered. (next_value: {})", unit, next_value);
+            return false;
+        },
+        Some(id) => *id
+    };
+    let chosen_vec = match previous_terminator {
+        '*' => {
+            match *switched_to_end {
+                false => starting_numers, 
+                true => ending_numers,
+            }
+        },
+        '/' => {
+            match *switched_to_end {
+                false => starting_denoms,
+                true  => ending_denoms,
+            }
+        },
+        ':' => {
+            *switched_to_end = true;
+            ending_numers
+        }
+        _ => panic!("Previous terminator must be '*', '/', or ':'")
+    };
+    for _ in 0..exponent {
+        chosen_vec.push(id);
+    }
+    true
 }
 
 fn convert_quantity_to_string(unit_ids: &HashMap<usize, Unit>, value: f64, numers: &Vec<usize>, denoms: &Vec<usize>) -> String {
@@ -352,112 +349,6 @@ fn convert_quantity_to_string(unit_ids: &HashMap<usize, Unit>, value: f64, numer
     s
 }
 
-fn print_steps(unit_ids: &HashMap<usize, Unit>, 
-    initial_value: f64, 
-    answer: f64, 
-    steps: Vec<Step>, 
-    starting_numers: &Vec<usize>,
-    starting_denoms: &Vec<usize>,
-    ending_numers: &Vec<usize>,
-    ending_denoms: &Vec<usize>)
-{
-    let mut bottom = String::new();
-    let mut middle = String::new();
-    let mut top = String::new();
-
-    let numer = format!("{} {}", initial_value, convert_ids_to_string(starting_numers, unit_ids));
-    if starting_denoms.len() == 0 {
-        let whitespace = " ".repeat(numer.graphemes(true).count());
-        top.push_str(whitespace.as_str());
-        middle.push_str(numer.as_str());
-        bottom.push_str(whitespace.as_str());
-    } else {
-        let denom = convert_ids_to_string(starting_denoms, unit_ids);
-        push_fraction(&mut top, &mut middle, &mut bottom, numer, denom);
-    }
-
-    for step in steps {
-        let numer = step.get_top(unit_ids);
-        let denom = step.get_bottom(unit_ids);
-        push_fraction(&mut top, &mut middle, &mut bottom, numer, denom);
-    }
-
-    top.push_str("   ");
-    middle.push_str(" = ");
-    bottom.push_str("   ");
-
-    let numer = format!("{} {}", answer, convert_ids_to_string(ending_numers, unit_ids));
-    if ending_denoms.len() == 0 {
-        // let whitespace = " ".repeat(numer.len());
-        // top.push_str(whitespace.as_str());
-        middle.push_str(numer.as_str());
-        // bottom.push_str(whitespace.as_str());
-    } else {
-        let denom = convert_ids_to_string(ending_denoms, unit_ids);
-        push_fraction(&mut top, &mut middle, &mut bottom, numer, denom);
-    }
-
-    println!("\n{top}");
-    println!("{middle}");
-    println!("{bottom}\n");
-}
-
-fn push_fraction(top: &mut String, middle: &mut String, bottom: &mut String, numer: String, denom: String) {
-    top   .push_str("⎧ ");
-    middle.push_str("⎪⎻");
-    bottom.push_str("⎩ ");
-        
-    let size = numer.len().max(denom.len());
-    top.push_str(format!("{: ^size$}", numer).as_str());
-    middle.push_str("⎻".repeat(size).as_str());
-    bottom.push_str(format!("{: ^size$}", denom).as_str());
-
-    top   .push_str(" ⎫");
-    middle.push_str("⎻⎪");
-    bottom.push_str(" ⎭");
-}
-
-fn convert_ids_to_string(starting_numers: &Vec<usize>, unit_ids: &HashMap<usize, Unit>) -> String {
-    let mut iter = starting_numers.iter();
-    let mut s = String::from(
-        unit_ids.get(iter.next()
-        .expect("Must have at least one unit in the numerator"))
-        .expect(ERR_ID_UNDEFINED).get_name());
-
-    for id in iter {
-        s.push_str(" × ");
-        s.push_str(unit_ids.get(id).expect(ERR_ID_UNDEFINED).get_name());
-    }
-    s
-}
-
-fn extract_unit(line: &str, termination_chars: &HashSet<char>) -> Option<(String, usize, char)> {
-    let mut unit: String = String::new();
-    let mut size: usize = 0;
-    for c in line.chars() {
-        size += 1;
-        if termination_chars.contains(&c) {
-            return Some((unit.trim().to_string(), size, c));
-        } else {
-            unit.push(c);
-        }
-    }
-
-    None
-}
-
-fn read_input(prompt: &str) -> String {
-    println!("{}", prompt);
-    let mut input = String::new();
-    match io::stdin().read_line(&mut input) {
-        Ok(_) => {},
-        Err(_) => {}
-    }
-    input = input.trim().to_string();
-    input.push(';');
-    input
-}
-
 fn find_first_shortest_paths(starts: &Vec<usize>, ends: &Vec<usize>, graph: &Vec<Vec<usize>>) -> Vec<Vec<usize>> {
     let mut paths = Vec::new();
     for start in starts {
@@ -468,17 +359,24 @@ fn find_first_shortest_paths(starts: &Vec<usize>, ends: &Vec<usize>, graph: &Vec
     paths
 }
 
-fn convert_multiple(unit_ids: &HashMap<usize, Unit>,
+fn convert_multiple(
+    unit_ids: &HashMap<usize, Unit>,
     generator: &IDGenerator,
     value: &f64,
     starting_numers: &Vec<usize>,
     starting_denoms: &Vec<usize>,
     ending_numers: &Vec<usize>,
-    ending_denoms: &Vec<usize>,
-) -> Option<(Vec<Step>, f64)>
-{
-    debug_assert!(starting_numers.len() == ending_numers.len(), "Starting and ending numerators must be equal in length, start:{}, end:{}", starting_numers.len(), ending_numers.len());
-    debug_assert!(starting_denoms.len() == starting_denoms.len(), "Starting and ending denominators must be equal in length, start:{}, end:{}", starting_denoms.len(), ending_denoms.len());
+    ending_denoms: &Vec<usize>
+)-> Option<(Vec<Step>, f64)> {
+    if starting_numers.len() != ending_numers.len() {
+        print!("Starting and ending numerators must be equal in length! ");
+        return None;
+    }
+    if starting_denoms.len() != ending_denoms.len() {
+        print!("Starting and ending denominators must be equal in length! ");
+        return None;
+
+    }
 
     let mut graph = Vec::new();
     for id in 0..generator.peek() {
@@ -526,4 +424,139 @@ fn add_steps(path: Vec<usize>, unit_ids: &HashMap<usize, Unit>, running_answer: 
             steps.push(Step::of(conversion, *this_id, next_id));
         }
     }
+}
+
+fn print_steps(unit_ids: &HashMap<usize, Unit>, 
+    initial_value: f64, 
+    answer: f64, 
+    steps: Vec<Step>, 
+    starting_numers: &Vec<usize>,
+    starting_denoms: &Vec<usize>,
+    ending_numers: &Vec<usize>,
+    ending_denoms: &Vec<usize>)
+{
+    fn convert_ids_to_string(ids: &Vec<usize>, unit_ids: &HashMap<usize, Unit>) -> String {
+        let mut iter = ids.iter();
+        let mut s = String::from(
+            unit_ids.get(iter.next()
+            .expect("Must have at least one unit in the numerator"))
+            .expect(ERR_ID_UNDEFINED).get_name());
+    
+        for id in iter {
+            s.push_str(" × ");
+            s.push_str(unit_ids.get(id).expect(ERR_ID_UNDEFINED).get_name());
+        }
+        s
+    }
+    
+    fn push_fraction (top: &mut String, middle: &mut String, bottom: &mut String, numer: String, denom: String) {
+        top   .push_str("⎧ ");
+        middle.push_str("⎪⎻");
+        bottom.push_str("⎩ ");
+            
+        let size = numer.len().max(denom.len());
+        top.push_str(format!("{: ^size$}", numer).as_str());
+        middle.push_str("⎻".repeat(size).as_str());
+        bottom.push_str(format!("{: ^size$}", denom).as_str());
+    
+        top   .push_str(" ⎫");
+        middle.push_str("⎻⎪");
+        bottom.push_str(" ⎭");
+    }
+    
+    let mut bottom = String::new();
+    let mut middle = String::new();
+    let mut top = String::new();
+
+    let numer = format!("{} {}", initial_value, convert_ids_to_string(starting_numers, unit_ids));
+    if starting_denoms.len() == 0 {
+        let whitespace = " ".repeat(numer.graphemes(true).count());
+        top.push_str(whitespace.as_str());
+        middle.push_str(numer.as_str());
+        bottom.push_str(whitespace.as_str());
+    } else {
+        let denom = convert_ids_to_string(starting_denoms, unit_ids);
+        push_fraction(&mut top, &mut middle, &mut bottom, numer, denom);
+    }
+
+    for step in steps {
+        let numer = step.get_top(unit_ids);
+        let denom = step.get_bottom(unit_ids);
+        push_fraction(&mut top, &mut middle, &mut bottom, numer, denom);
+    }
+
+    top.push_str("   ");
+    middle.push_str(" = ");
+    bottom.push_str("   ");
+
+    let numer = format!("{} {}", answer, convert_ids_to_string(ending_numers, unit_ids));
+    if ending_denoms.len() == 0 {
+        // let whitespace = " ".repeat(numer.len());
+        // top.push_str(whitespace.as_str());
+        middle.push_str(numer.as_str());
+        // bottom.push_str(whitespace.as_str());
+    } else {
+        let denom = convert_ids_to_string(ending_denoms, unit_ids);
+        push_fraction(&mut top, &mut middle, &mut bottom, numer, denom);
+    }
+
+    println!("\n{top}");
+    println!("{middle}");
+    println!("{bottom}\n");
+}
+
+fn load_units_from_file(
+    mut generator: &mut IDGenerator, 
+    mut aliases: &mut HashMap<String, usize>, 
+    mut unit_ids: &mut HashMap<usize, Unit>, 
+    file_path: &Path) 
+{
+    let contents = fs::read_to_string(file_path).expect(ERR_FILE_READ);
+    for line in contents.lines() {
+        let mut line = line.to_string();
+        line.push(';');
+        match line.chars().next() {
+            Some('#') => create_unit(&mut generator, &mut aliases, &mut unit_ids, line, false),
+            Some('$') => create_conversion(&mut aliases, &mut unit_ids, line, false),
+            _ => continue
+        };
+    }
+}
+
+fn print_help_page(file_path: &Path) {
+    let contents = fs::read_to_string(file_path).expect(ERR_FILE_READ);
+    print!("{contents}");
+}
+
+fn print_all_units(generator: &IDGenerator, unit_ids: &HashMap<usize, Unit>) {
+    println!("All currently registered units:");
+    for id in 0..generator.peek() {
+        println!("\t{}: {}", id, unit_ids.get(&id).expect(ERR_ID_UNDEFINED).get_name());
+    }
+}
+
+fn extract_unit(line: &str, termination_chars: &HashSet<char>) -> Option<(String, usize, char)> {
+    let mut unit: String = String::new();
+    let mut size: usize = 0;
+    for c in line.chars() {
+        size += 1;
+        if termination_chars.contains(&c) {
+            return Some((unit.trim().to_string(), size, c));
+        } else {
+            unit.push(c);
+        }
+    }
+    None
+}
+
+fn read_input(prompt: &str) -> String {
+    println!("{}", prompt);
+    let mut input = String::new();
+    match io::stdin().read_line(&mut input) {
+        Ok(_) => {},
+        Err(_) => {}
+    }
+    input = input.trim().to_string();
+    input.push(';');
+    input
 }
