@@ -192,17 +192,12 @@ fn attempt_conversion(
     generator: &IDGenerator,
     previous_answer: &mut Option<String>)
 {
-    // Some really "rusty" code. Here's the breakdown:
-    // If the line passed into this function has the prefix "ans", then we see if we have a previous answer
-    // If there is a previous answer, then we shadow it with a clone of the internal value and then push the stripped line onto the end
-    // If there is None previous answer, then we print out a complaint and return from the function because it's a bad command
-    // If the line didn't have the prefix, then we just let line = line which is a no-op
     let line = if let Some(stripped) = line.strip_prefix("ans") {
         match previous_answer {
             Some(previous_answer) => {
-                let mut previous_answer = previous_answer.clone();
-                previous_answer.push_str(stripped);
-                previous_answer
+                let mut line = previous_answer.clone();
+                line.push_str(stripped);
+                line
             },
             None => {
                 println!("Cannot use 'ans': no previous answer");
@@ -468,7 +463,7 @@ fn print_steps(unit_ids: &HashMap<usize, Unit>,
     let mut middle = String::new();
     let mut top = String::new();
 
-    let numer = format!("{} {}", initial_value, convert_ids_to_string(starting_numers, unit_ids));
+    let numer = format!("{0:.3e} {1}", initial_value, convert_ids_to_string(starting_numers, unit_ids));
     if starting_denoms.len() == 0 {
         let whitespace = " ".repeat(numer.graphemes(true).count());
         top.push_str(whitespace.as_str());
@@ -489,7 +484,7 @@ fn print_steps(unit_ids: &HashMap<usize, Unit>,
     middle.push_str(" = ");
     bottom.push_str("   ");
 
-    let numer = format!("{} {}", answer, convert_ids_to_string(ending_numers, unit_ids));
+    let numer = format!("{0:.3e} {1}", answer, convert_ids_to_string(ending_numers, unit_ids));
     if ending_denoms.len() == 0 {
         // let whitespace = " ".repeat(numer.len());
         // top.push_str(whitespace.as_str());
