@@ -49,9 +49,9 @@ impl Step {
 }
 
 impl IDGenerator {
-    pub fn new() -> Self {
+    pub fn new(initial_id: usize) -> Self {
         IDGenerator {
-            id: 0
+            id: initial_id
         }
     }
 
@@ -143,3 +143,15 @@ impl PartialEq for Unit {
 }
 
 impl Eq for Unit { }
+
+pub struct Element {
+    pub symbol: String,
+    pub atomic_number: usize,
+    pub molar_mass: f64
+}
+
+impl Element {
+    pub fn new(symbol: String, atomic_number: usize, molar_mass: f64) -> Self {
+        Element { symbol, atomic_number, molar_mass }
+    }
+}

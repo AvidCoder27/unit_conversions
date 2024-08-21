@@ -1,6 +1,6 @@
 mod structs;
 mod algorithm;
-use structs::{Conversion, IDGenerator, Step, Unit};
+use structs::{Conversion, Element, IDGenerator, Step, Unit};
 use std::{collections::{HashMap, HashSet}, fs, io, path::Path};
 use fast_float;
 use unicode_segmentation::UnicodeSegmentation;
@@ -9,23 +9,19 @@ const ERR_ID_UNDEFINED: &str = "UnitIDs HashMap is missing a definition for an I
 const ERR_FILE_READ: &str = "File read must not fail";
 
 fn main() {
-    let conversions_file_path = Path::new(r#"./conversions.txt"#);
     let help_file_path = Path::new(r#"./help.txt"#);
-    let mut generator: IDGenerator = IDGenerator::new();
+    let conversions_file_path = Path::new(r#"./conversions.txt"#);
+    let elements_file_path = Path::new(r#"./elements.txt"#);
+    let mut units_generator: IDGenerator = IDGenerator::new(0);
+    let mut elements_generator: IDGenerator = IDGenerator::new(1);
     let mut unit_ids = HashMap::<usize, Unit>::new();
-    let mut aliases = HashMap::<String, usize>::new();
+    let mut unit_aliases = HashMap::<String, usize>::new();
+    let mut element_ids = HashMap::<usize, Element>::new();
+    let mut element_aliases = HashMap::<String, usize>::new();
+    
+    load_units_from_file(&mut units_generator, &mut unit_aliases, &mut unit_ids, conversions_file_path);
+    load_elements_from_file(&mut elements_generator, &mut element_aliases, &mut element_ids, elements_file_path);
 
-    load_units_from_file(&mut generator, &mut aliases, &mut unit_ids, conversions_file_path);
-    main_loop(help_file_path, generator, unit_ids, aliases, conversions_file_path);
-}
-
-fn main_loop(
-    help_file_path: &Path,
-    mut generator: IDGenerator,
-    mut unit_ids: HashMap<usize, Unit>,
-    mut aliases: HashMap<String, usize>,
-    conversions_file_path: &Path)
-{
     let mut previous_answer: Option<String> = None;
     loop {
         let line = read_input("\nEnter a command, or `help`:");
@@ -37,24 +33,28 @@ fn main_loop(
             continue;
         }
         if line == String::from("list;") {
-            print_all_units(&generator, &unit_ids);
+            print_all_units(&units_generator, &unit_ids);
             continue;
         }
         if line == String::from("reload;") {
+            units_generator.clear();
+            elements_generator.clear();
             unit_ids.clear();
-            aliases.clear();
-            generator.clear();
+            unit_aliases.clear();
+            element_ids.clear();
+            element_aliases.clear();
             previous_answer = None;
-            load_units_from_file(&mut generator, &mut aliases, &mut unit_ids, conversions_file_path);
+            load_units_from_file(&mut units_generator, &mut unit_aliases, &mut unit_ids, conversions_file_path);
+            load_elements_from_file(&mut elements_generator, &mut unit_aliases, &mut element_ids, elements_file_path);
             println!("Reloaded!");
             continue;
         }
 
         match line.chars().next() {
             None => panic!("Line must not be empty"),
-            Some('#') => create_unit(&mut generator, &mut aliases, &mut unit_ids, line, true),
-            Some('$') => create_conversion(&mut aliases, &mut unit_ids, line, true),
-            _ => attempt_conversion(line, &aliases, &unit_ids, &generator, &mut previous_answer)
+            Some('#') => create_unit(&mut units_generator, &mut unit_aliases, &mut unit_ids, line, true),
+            Some('$') => create_conversion(&mut unit_aliases, &mut unit_ids, line, true),
+            _ => attempt_conversion(line, &unit_aliases, &unit_ids, &units_generator, &mut previous_answer)
         };
     }
 }
@@ -498,10 +498,47 @@ fn print_steps(unit_ids: &HashMap<usize, Unit>,
     println!("{bottom}\n");
 }
 
+fn load_elements_from_file(generator: &mut IDGenerator, aliases: &mut HashMap<String, usize>, element_ids: &mut HashMap<usize, Element>, file_path: &Path) {
+    let contents = fs::read_to_string(file_path).expect(ERR_FILE_READ);
+    for line in contents.lines() {
+        let mut line = line.trim().to_string();
+        line.push(';');
+        if line.len() > 0 {
+            create_element(generator, aliases, element_ids, line);
+        }
+    }
+}
+
+fn create_element(generator: &mut IDGenerator, aliases: &mut HashMap<String, usize>, element_ids: &mut HashMap<usize, Element>, line: String) {
+    let mut line = line.as_str();
+    let mut new_aliases = Vec::new();
+    loop {
+        if let Some((alias, length, terminator)) = extract_unit(line, &HashSet::from([',', '='])) {
+            line = &line[length..].trim();
+            new_aliases.push(alias);
+            if terminator == '=' {
+                break
+            }
+        } else {
+            panic!("Element file line must have an equals sign")
+        }
+    }
+    let molar_mass: f64 = match fast_float::parse_partial(line) {
+        Ok((molar_mass, _)) => molar_mass,
+        Err(err) => panic!("new element line must have a valid number after the equals sign: fast_float says {err}")
+    };
+    let atomic_number = generator.next();
+    let element = Element::new(new_aliases[0].clone(), atomic_number, molar_mass);
+    element_ids.insert(atomic_number, element);
+    for alias in new_aliases {
+        aliases.insert(alias, atomic_number);
+    }
+}
+
 fn load_units_from_file(
-    mut generator: &mut IDGenerator, 
-    mut aliases: &mut HashMap<String, usize>, 
-    mut unit_ids: &mut HashMap<usize, Unit>, 
+    generator: &mut IDGenerator, 
+    aliases: &mut HashMap<String, usize>, 
+    unit_ids: &mut HashMap<usize, Unit>, 
     file_path: &Path) 
 {
     let contents = fs::read_to_string(file_path).expect(ERR_FILE_READ);
@@ -509,8 +546,8 @@ fn load_units_from_file(
         let mut line = line.to_string();
         line.push(';');
         match line.chars().next() {
-            Some('#') => create_unit(&mut generator, &mut aliases, &mut unit_ids, line, false),
-            Some('$') => create_conversion(&mut aliases, &mut unit_ids, line, false),
+            Some('#') => create_unit(generator, aliases, unit_ids, line, false),
+            Some('$') => create_conversion(aliases, unit_ids, line, false),
             _ => continue
         };
     }
