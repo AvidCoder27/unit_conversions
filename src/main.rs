@@ -253,7 +253,7 @@ fn extract_value_and_units(line: String, aliases: &HashMap<String, usize>
             Some(thing) => thing
         };
         if unit.len() > 0 {
-            if !process_and_push_unit(unit, aliases, next_value, previous_terminator, &mut switched_to_end, &mut starting_numers, &mut ending_numers, &mut starting_denoms, &mut ending_denoms) {
+            if !process_and_push_unit(unit, aliases, previous_terminator, &mut switched_to_end, &mut starting_numers, &mut ending_numers, &mut starting_denoms, &mut ending_denoms) {
                 return None;
             }
         }
@@ -274,7 +274,6 @@ fn extract_value_and_units(line: String, aliases: &HashMap<String, usize>
 fn process_and_push_unit(
     unit: String,
     aliases: &HashMap<String, usize>,
-    next_value: f64,
     previous_terminator: char,
     switched_to_end: &mut bool,
     starting_numers: &mut Vec<usize>,
@@ -295,7 +294,7 @@ fn process_and_push_unit(
     };
     let id = match aliases.get(unit.as_str()) {
         None => {
-            println!("Invalid Conversion: Unit '{}' is not registered. (next_value: {})", unit, next_value);
+            println!("Invalid Conversion: Unit '{}' is not registered.", unit);
             return false;
         },
         Some(id) => *id
@@ -344,16 +343,6 @@ fn convert_quantity_to_string(unit_ids: &HashMap<usize, Unit>, value: f64, numer
     s
 }
 
-fn find_first_shortest_paths(starts: &Vec<usize>, ends: &Vec<usize>, graph: &Vec<Vec<usize>>) -> Vec<Vec<usize>> {
-    let mut paths = Vec::new();
-    for start in starts {
-        if let Some(path) = algorithm::find_first_shortest_path(graph, *start, ends) {
-            paths.push(path);
-        }
-    }
-    paths
-}
-
 fn convert_multiple(
     unit_ids: &HashMap<usize, Unit>,
     generator: &IDGenerator,
@@ -370,9 +359,26 @@ fn convert_multiple(
     if starting_denoms.len() != ending_denoms.len() {
         print!("Starting and ending denominators must be equal in length! ");
         return None;
-
     }
 
+    let graph = generate_graph(generator, unit_ids);
+    let mut steps = Vec::<Step>::new();
+    let mut running_answer = *value;
+
+    for path in algorithm::find_paths_between(starting_numers, ending_numers, &graph) {
+        add_steps(path, unit_ids, &mut running_answer, &mut steps, false);
+    }
+    for path in algorithm::find_paths_between(starting_denoms, ending_denoms, &graph) {
+        add_steps(path, unit_ids, &mut running_answer, &mut steps, true);
+    }
+
+    match steps.len() {
+        0 => None,
+        1.. => Some((steps, running_answer))
+    }
+}
+
+fn generate_graph(generator: &IDGenerator, unit_ids: &HashMap<usize, Unit>) -> Vec<Vec<usize>> {
     let mut graph = Vec::new();
     for id in 0..generator.peek() {
         let mut new_node = Vec::new();
@@ -381,21 +387,7 @@ fn convert_multiple(
         }
         graph.push(new_node);
     }
-    let graph = graph;
-    let mut steps = Vec::<Step>::new();
-    let mut running_answer = *value;
-
-    for path in find_first_shortest_paths(starting_numers, ending_numers, &graph) {
-        add_steps(path, unit_ids, &mut running_answer, &mut steps, false);
-    }
-    for path in find_first_shortest_paths(starting_denoms, ending_denoms, &graph) {
-        add_steps(path, unit_ids, &mut running_answer, &mut steps, true);
-    }
-
-    match steps.len() {
-        0 => None,
-        1.. => Some((steps, running_answer))
-    }
+    graph
 }
 
 fn add_steps(path: Vec<usize>, unit_ids: &HashMap<usize, Unit>, running_answer: &mut f64, steps: &mut Vec<Step>, inverse: bool) {
@@ -463,7 +455,10 @@ fn print_steps(unit_ids: &HashMap<usize, Unit>,
     let mut middle = String::new();
     let mut top = String::new();
 
-    let numer = format!("{0:.3e} {1}", initial_value, convert_ids_to_string(starting_numers, unit_ids));
+    let numer = format!(
+        //"{0:.3e} {1}", 
+        "{} {}",
+        initial_value, convert_ids_to_string(starting_numers, unit_ids));
     if starting_denoms.len() == 0 {
         let whitespace = " ".repeat(numer.graphemes(true).count());
         top.push_str(whitespace.as_str());
@@ -484,7 +479,10 @@ fn print_steps(unit_ids: &HashMap<usize, Unit>,
     middle.push_str(" = ");
     bottom.push_str("   ");
 
-    let numer = format!("{0:.3e} {1}", answer, convert_ids_to_string(ending_numers, unit_ids));
+    let numer = format!(
+        //"{0:.3e} {1}", 
+        "{} {}",
+        answer, convert_ids_to_string(ending_numers, unit_ids));
     if ending_denoms.len() == 0 {
         // let whitespace = " ".repeat(numer.len());
         // top.push_str(whitespace.as_str());

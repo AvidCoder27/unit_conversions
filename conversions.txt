@@ -25,6 +25,7 @@ $ 1 mile = 5280 feet
 $ 1 nmi = 1852 meters
 $ 1 mile = 1.60934 kilometer
 $ 1 inch = 2.54 cm
+$ 1 meter = 3.28084 ft
 $ 4 inch = 1 hand
 $ 9.4607304725808e12 km = 1 lightyear
 $ 9460730472580800 m = 1 lightyear
