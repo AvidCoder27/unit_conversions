@@ -85,3 +85,53 @@ $ 1 century = 100 calendar years
 # square feet, square foot, sq ft
 # square yard|s, sq yd
 # square mile|s, sq mi
+
+# liter|s, L, litre|s
+# mL, milliliter|s, millilitre|s, cc, cubic centimeter|s, ml
+# metric tablespoon
+
+$ 1 metric tablespoon = 15 ml
+
+# fluid ounce|s, fl oz, fl. oz.
+# tablespoon|s, tbsp
+# teaspoon|s, tsp
+# cup|s
+# pint|s, pt, US liquid pint|s, US pint|s
+# quart|s, qt, US quart|s, US liquid quart|s
+# gallon|s, US gallon|s, US gal, gal|s, US liquid gallon|s
+
+$ 1 gallon = 4 quarts
+$ 1 quart = 2 pints
+$ 1 quart = 4 cups
+$ 1 pint = 2 cups
+$ 1 cup = 16 tablespoons
+$ 1 cup = 8 fl oz
+$ 1 fl oz = 2 tablespoon
+$ 1 tablespoon = 3 teaspoons
+$ 1 gallon = 128 fl oz
+$ 1 pint = 16 fl oz
+$ 1 fl oz = 29.5735 ml
+
+# cubic inch|es, cubic in
+# cubic feet, cubic foot, cubic ft
+# cubic yard|s, cubic yd
+# cubic mile|s, cubic mi
+
+$ 1 gallon = 231 cubic inches
+$ 1 fl oz = 1.8046875 cubic inches
+
+# imperial gallon|s
+# imperial quart|s
+# imperial pint|s
+# imperial gill|s
+# imperial ounce|s, imperial oz
+
+$ 1 imperial gallon = 4 imperial quarts
+$ 1 imperial quart = 2 imperial pints
+$ 1 imperial pint = 4 imperial gills
+$ 1 imperial gill = 5 imperial ounces
+$ 1 imperial gallon = 160 imperial ounces
+$ 1 imperial oz = 28.4130625 mL
+
+# US dry pint
+$ 1 US dry pint = 18.6 fl oz

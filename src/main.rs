@@ -162,14 +162,14 @@ fn create_conversion(aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMa
 
     let unit_1 = match aliases.get(&unit_1) {
         None => {
-            println!("The first unit in that conversion is not registered");
+            println!("The first unit ({}) in that conversion is not registered", unit_1);
             return;
         },
         Some(thing) => thing
     };
     let unit_2 = match aliases.get(&unit_2) {
         None => {
-            println!("The second unit in that conversion is not registered");
+            println!("The second unit ({}) in that conversion is not registered", unit_2);
             return;
         },
         Some(thing) => thing
