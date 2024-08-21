@@ -25,18 +25,21 @@ fn main() {
     let mut previous_answer: Option<String> = None;
     loop {
         let line = read_input("\nEnter a command, or `help`:");
-        if line == String::from("quit;") {
+        if line.eq("quit;") {
             break;
         }
-        if line == String::from("help;") {
-            print_help_page(help_file_path);
+        if line.eq("help;") {
+            println!("{}", fs::read_to_string(help_file_path).expect(ERR_FILE_READ));
             continue;
         }
-        if line == String::from("list;") {
-            print_all_units(&units_generator, &unit_ids);
+        if line.eq("list;") {
+            println!("All currently registered units:");
+            for id in 0..units_generator.peek() {
+                println!("\t{}: {}", id, unit_ids.get(&id).expect(ERR_ID_UNDEFINED).get_name());
+            }
             continue;
         }
-        if line == String::from("reload;") {
+        if line.eq("reload;") {
             units_generator.clear();
             elements_generator.clear();
             unit_ids.clear();
@@ -54,7 +57,7 @@ fn main() {
             None => panic!("Line must not be empty"),
             Some('#') => create_unit(&mut units_generator, &mut unit_aliases, &mut unit_ids, line, true),
             Some('$') => create_conversion(&mut unit_aliases, &mut unit_ids, line, true),
-            _ => attempt_conversion(line, &unit_aliases, &unit_ids, &units_generator, &mut previous_answer)
+            _ => attempt_conversion(line, &unit_aliases, &element_aliases, &unit_ids, &units_generator, &mut previous_answer)
         };
     }
 }
@@ -73,13 +76,18 @@ fn create_unit(
             names.push(word.clone());
         }
     }
-
     let mut names: Vec<String> = Vec::new();
     let mut word = String::new();
     let mut state: u8 = 0;
     let mut move_next_word_up = false;
-
     for c in line.chars() {
+        if c.is_ascii_digit() { 
+            if from_user {
+                println!("Cannot create unit with a digit ({c}) in its name");
+            } else {
+                panic!("Cannot create unit with a digit ({c}) in its name");
+            }
+        }
         match state {
             0 => {
                 assert!(c == '#', "Cannot create unit from a line that does not begin with '#'");
@@ -187,8 +195,9 @@ fn create_conversion(aliases: &mut HashMap<String, usize>, unit_ids: &mut HashMa
 
 fn attempt_conversion(
     line: String, 
-    aliases: &HashMap<String, usize>, 
-    unit_ids: &HashMap<usize, Unit>, 
+    unit_aliases: &HashMap<String, usize>, 
+    element_aliases: &HashMap<String, usize>,
+    unit_ids: &HashMap<usize, Unit>,
     generator: &IDGenerator,
     previous_answer: &mut Option<String>)
 {
@@ -209,7 +218,7 @@ fn attempt_conversion(
     };
 
     let (value,starting_numers,starting_denoms,ending_numers,ending_denoms) =
-    match extract_value_and_units(line, aliases) {
+    match extract_value_and_units(line, unit_aliases, element_aliases) {
         None => return,
         Some(thing) => thing
     };
@@ -223,8 +232,7 @@ fn attempt_conversion(
     }
 }
 
-fn extract_value_and_units(line: String, aliases: &HashMap<String, usize>
-) -> Option<(f64, Vec<usize>, Vec<usize>, Vec<usize>, Vec<usize>)> {
+fn extract_value_and_units(line: String, unit_aliases: &HashMap<String, usize>, element_aliases: &HashMap<String, usize>) -> Option<(f64, Vec<usize>, Vec<usize>, Vec<usize>, Vec<usize>)> {
     let mut running_value = 1f64;
     let mut size = 0;
     let mut starting_numers = Vec::new();
@@ -235,16 +243,19 @@ fn extract_value_and_units(line: String, aliases: &HashMap<String, usize>
     let mut switched_to_end = false;
     loop {
         let line = line[size..].trim();
-        // extract a value before the unit if it is there
-        let (next_value, value_size) = match fast_float::parse_partial(&line) {
-            Err(_) => (1f64, 0),
-            Ok(thing) => {
-                if switched_to_end {
+        // this if,loop,if is the best way to ensure that there are no numbers in the second half of the expression
+        if switched_to_end || previous_terminator == ':'{
+            for c in line.chars() {
+                if c.is_ascii_digit() {
                     println!("Invalid Conversion: Improper placement of number after the separating ':'");
                     return None;
                 }
-                thing
             }
+        }
+        // extract a value before the unit if it is there
+        let (next_value, value_size) = match fast_float::parse_partial(&line) {
+            Err(_) => (1f64, 0),
+            Ok(thing) => thing
         };
         let line = line[value_size..].trim();
         let (unit, unit_size, next_terminator) = 
@@ -252,28 +263,28 @@ fn extract_value_and_units(line: String, aliases: &HashMap<String, usize>
             None => break,
             Some(thing) => thing
         };
-        if unit.len() > 0 {
-            if !process_and_push_unit(unit, aliases, previous_terminator, &mut switched_to_end, &mut starting_numers, &mut ending_numers, &mut starting_denoms, &mut ending_denoms) {
-                return None;
-            }
-        }
         if next_value != 1f64 {
             running_value *= match previous_terminator {
                 '*' => next_value,
                 '/' => next_value.recip(),
-                _ => panic!("Previous Terminator must be '*' or '/' when updating running_value")
+                _ => panic!("Previous Terminator ({}) must be '*' or '/' when updating running_value", previous_terminator)
+            }
+        }
+        if unit.len() > 0 {
+            if !process_and_push_unit(unit, unit_aliases, element_aliases, previous_terminator, &mut switched_to_end, &mut starting_numers, &mut ending_numers, &mut starting_denoms, &mut ending_denoms) {
+                return None;
             }
         }
         size += unit_size + value_size;
         previous_terminator = next_terminator;
     }
-        
     Some((running_value, starting_numers, starting_denoms, ending_numers, ending_denoms))
 }
 
 fn process_and_push_unit(
     unit: String,
-    aliases: &HashMap<String, usize>,
+    unit_aliases: &HashMap<String, usize>,
+    element_aliases: &HashMap<String, usize>,
     previous_terminator: char,
     switched_to_end: &mut bool,
     starting_numers: &mut Vec<usize>,
@@ -281,6 +292,22 @@ fn process_and_push_unit(
     starting_denoms: &mut Vec<usize>,
     ending_denoms: &mut Vec<usize>
 ) -> bool {
+    let (unit, elements) = if let Some((prefix, suffix)) = unit.split_once('[') {
+        if *switched_to_end {
+            println!("Invaid Conversion: Improper use of braces after colon; elements are defined with the starting units");
+            return false;
+        }
+        (prefix.trim().to_string(), Some(
+            if let Some((middle, _)) = suffix.split_once(']') {
+                extract_elements(middle.trim(), element_aliases)
+            } else {
+                println!("Invalid Conversion: Element ({suffix}) is missing a closing bracket");
+                return false;
+            }
+        ))
+    } else {
+        (unit, None)
+    };
     let (unit, exponent) = if let Some((prefix, suffix)) = unit.split_once('^') {
         match i32::from_str_radix(suffix.trim(), 10) {
             Ok(exponent) => (prefix.to_string(), exponent),
@@ -292,7 +319,7 @@ fn process_and_push_unit(
     } else {
         (unit, 1)
     };
-    let id = match aliases.get(unit.as_str()) {
+    let id = match unit_aliases.get(unit.as_str()) {
         None => {
             println!("Invalid Conversion: Unit '{}' is not registered.", unit);
             return false;
@@ -316,12 +343,45 @@ fn process_and_push_unit(
             *switched_to_end = true;
             ending_numers
         }
-        _ => panic!("Previous terminator must be '*', '/', or ':'")
+        _ => panic!("Previous terminator ({}) must be '*', '/', or ':'", previous_terminator)
     };
     for _ in 0..exponent {
         chosen_vec.push(id);
     }
     true
+}
+
+fn extract_elements(chemical: &str, aliases: &HashMap<String, usize>) -> Vec<(usize, u16)>{
+    fn finish_current(current_elem: &mut String, current_num: &mut String, elements: &mut Vec<(usize, u16)>, aliases: &HashMap<String, usize>) {
+        if current_elem.len() > 0 {
+            let subscript = if current_num.is_empty() {
+                1
+            } else {
+                match u16::from_str_radix(current_num.as_str(), 10) {
+                    Ok(subscript) => subscript,
+                    Err(err) => panic!("Error parsing num when extracting elements: {err}")
+                }
+            };
+            elements.push((*aliases.get(current_elem.as_str()).expect("Invalid element"), subscript));
+            current_elem.clear();
+            current_num.clear();
+        }
+    }
+    let mut elements = Vec::new();
+    let mut current_elem = String::new();
+    let mut current_num = String::new();
+    for ch in chemical.chars() {
+        if ch.is_ascii_uppercase() {
+            finish_current(&mut current_elem, &mut current_num, &mut elements, aliases);
+            current_elem.push(ch);
+        } else if ch.is_ascii_lowercase() {
+            current_elem.push(ch);
+        } else if ch.is_ascii_digit() {
+            current_num.push(ch);
+        }
+    }
+    finish_current(&mut current_elem, &mut current_num, &mut elements, aliases);
+    elements
 }
 
 fn convert_quantity_to_string(unit_ids: &HashMap<usize, Unit>, value: f64, numers: &Vec<usize>, denoms: &Vec<usize>) -> String {
@@ -550,18 +610,6 @@ fn load_units_from_file(
             Some('$') => create_conversion(aliases, unit_ids, line, false),
             _ => continue
         };
-    }
-}
-
-fn print_help_page(file_path: &Path) {
-    let contents = fs::read_to_string(file_path).expect(ERR_FILE_READ);
-    print!("{contents}");
-}
-
-fn print_all_units(generator: &IDGenerator, unit_ids: &HashMap<usize, Unit>) {
-    println!("All currently registered units:");
-    for id in 0..generator.peek() {
-        println!("\t{}: {}", id, unit_ids.get(&id).expect(ERR_ID_UNDEFINED).get_name());
     }
 }
 
