@@ -93,9 +93,9 @@ impl Conversion {
 }
 
 impl Unit {
-    pub fn new(name: &str, gen: &mut IDGenerator) -> Self {
+    pub fn new(name: String, gen: &mut IDGenerator) -> Self {
         Unit {
-            name: String::from(name),
+            name,
             id: gen.next(),
             edges: HashMap::new()
         }

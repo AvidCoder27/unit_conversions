@@ -30,6 +30,11 @@ $ 4 inch = 1 hand
 $ 9.4607304725808e12 km = 1 lightyear
 $ 9460730472580800 m = 1 lightyear
 
+# mol, mole|s
+# particle|s, atom|s, molecule|s
+
+$ 1 mol = 6.02214076e23 particles
+
 # pound|s, lb|s
 # kilogram|s, kg,
 # gram|s, g
@@ -91,6 +96,7 @@ $ 1 century = 100 calendar years
 # metric tablespoon
 
 $ 1 metric tablespoon = 15 ml
+$ 1 L = 1000 mL
 
 # fluid ounce|s, fl oz, fl. oz.
 # tablespoon|s, tbsp

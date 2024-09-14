@@ -7,6 +7,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 const ERR_ID_UNDEFINED: &str = "UnitIDs HashMap is missing a definition for an ID";
 const ERR_FILE_READ: &str = "File read must not fail";
+const AVAGADROS_CONSTANT: f64 = 6.02214076e23;
 
 fn main() {
     let help_file_path = Path::new(r#"./help.txt"#);
@@ -57,7 +58,7 @@ fn main() {
             None => panic!("Line must not be empty"),
             Some('#') => create_unit(&mut units_generator, &mut unit_aliases, &mut unit_ids, line, true),
             Some('$') => create_conversion(&mut unit_aliases, &mut unit_ids, line, true),
-            _ => attempt_conversion(line, &unit_aliases, &element_aliases, &unit_ids, &units_generator, &mut previous_answer)
+            _ => attempt_conversion(line, &unit_aliases, &element_aliases, &element_ids, &mut unit_ids, &mut units_generator, &mut previous_answer)
         };
     }
 }
@@ -133,7 +134,7 @@ fn create_unit(
         },
         Some(thing) => thing
     };
-    let unit = Unit::new(name, generator);
+    let unit = Unit::new(name.clone(), generator);
 
     for n in names.iter() {
         aliases.insert(n.to_string(), unit.get_id());
@@ -197,8 +198,9 @@ fn attempt_conversion(
     line: String, 
     unit_aliases: &HashMap<String, usize>, 
     element_aliases: &HashMap<String, usize>,
-    unit_ids: &HashMap<usize, Unit>,
-    generator: &IDGenerator,
+    element_ids: &HashMap<usize, Element>,
+    unit_ids: &mut HashMap<usize, Unit>,
+    generator: &mut IDGenerator,
     previous_answer: &mut Option<String>)
 {
     let line = if let Some(stripped) = line.strip_prefix("ans") {
@@ -216,14 +218,17 @@ fn attempt_conversion(
     } else {
         line
     };
-
+    let (line, chemical) = try_extract_chemical(line);
+    let elements = match chemical {
+        Some(chemical) => Some(extract_elements(chemical.as_str(), element_aliases)),
+        None => None,
+    };
     let (value,starting_numers,starting_denoms,ending_numers,ending_denoms) =
-    match extract_value_and_units(line, unit_aliases, element_aliases) {
+    match extract_value_and_units(line, unit_aliases) {
         None => return,
         Some(thing) => thing
     };
-
-    match convert_multiple(unit_ids, generator, &value, &starting_numers, &starting_denoms, &ending_numers, &ending_denoms) {
+    match convert_multiple(unit_ids, generator, element_ids, &value, &starting_numers, &starting_denoms, &ending_numers, &ending_denoms, elements) {
         None => print!("That conversion is impossible!\n"),
         Some((steps, answer)) => {
             print_steps(unit_ids, value, answer, steps, &starting_numers, &starting_denoms, &ending_numers, &ending_denoms);
@@ -232,7 +237,26 @@ fn attempt_conversion(
     }
 }
 
-fn extract_value_and_units(line: String, unit_aliases: &HashMap<String, usize>, element_aliases: &HashMap<String, usize>) -> Option<(f64, Vec<usize>, Vec<usize>, Vec<usize>, Vec<usize>)> {
+/// Returns the content within braces at the beggining of the line.
+/// The first string is the line without the chemical and the second string
+/// is the chemical without braces
+fn try_extract_chemical(line: String) -> (String, Option<String>) {
+    match line.split_once('[') {
+        None => (line, None),
+        Some((prefix, suffix)) => {
+            if let Some((presuffix, sufsuffix)) = suffix.split_once(']') {
+                let mut line = prefix.to_string();
+                line.push_str(sufsuffix);
+                (line, Some(presuffix.to_string()))
+            } else {
+                println!("Opening brace without closing brace!");
+                (line, None)
+            }
+        }
+    }
+}
+
+fn extract_value_and_units(line: String, unit_aliases: &HashMap<String, usize>) -> Option<(f64, Vec<usize>, Vec<usize>, Vec<usize>, Vec<usize>)> {
     let mut running_value = 1f64;
     let mut size = 0;
     let mut starting_numers = Vec::new();
@@ -258,8 +282,7 @@ fn extract_value_and_units(line: String, unit_aliases: &HashMap<String, usize>, 
             Ok(thing) => thing
         };
         let line = line[value_size..].trim();
-        let (unit, unit_size, next_terminator) = 
-        match extract_unit(line, &HashSet::from([';', ':', '*', '/'])) {
+        let (unit, unit_size, next_terminator) = match extract_unit(line, &HashSet::from([';', ':', '*', '/'])) {
             None => break,
             Some(thing) => thing
         };
@@ -271,8 +294,8 @@ fn extract_value_and_units(line: String, unit_aliases: &HashMap<String, usize>, 
             }
         }
         if unit.len() > 0 {
-            if !process_and_push_unit(unit, unit_aliases, element_aliases, previous_terminator, &mut switched_to_end, &mut starting_numers, &mut ending_numers, &mut starting_denoms, &mut ending_denoms) {
-                return None;
+            if !process_and_push_unit(unit, unit_aliases, previous_terminator, &mut switched_to_end, &mut starting_numers, &mut ending_numers, &mut starting_denoms, &mut ending_denoms) {
+                return None
             }
         }
         size += unit_size + value_size;
@@ -284,7 +307,6 @@ fn extract_value_and_units(line: String, unit_aliases: &HashMap<String, usize>, 
 fn process_and_push_unit(
     unit: String,
     unit_aliases: &HashMap<String, usize>,
-    element_aliases: &HashMap<String, usize>,
     previous_terminator: char,
     switched_to_end: &mut bool,
     starting_numers: &mut Vec<usize>,
@@ -292,22 +314,6 @@ fn process_and_push_unit(
     starting_denoms: &mut Vec<usize>,
     ending_denoms: &mut Vec<usize>
 ) -> bool {
-    let (unit, elements) = if let Some((prefix, suffix)) = unit.split_once('[') {
-        if *switched_to_end {
-            println!("Invaid Conversion: Improper use of braces after colon; elements are defined with the starting units");
-            return false;
-        }
-        (prefix.trim().to_string(), Some(
-            if let Some((middle, _)) = suffix.split_once(']') {
-                extract_elements(middle.trim(), element_aliases)
-            } else {
-                println!("Invalid Conversion: Element ({suffix}) is missing a closing bracket");
-                return false;
-            }
-        ))
-    } else {
-        (unit, None)
-    };
     let (unit, exponent) = if let Some((prefix, suffix)) = unit.split_once('^') {
         match i32::from_str_radix(suffix.trim(), 10) {
             Ok(exponent) => (prefix.to_string(), exponent),
@@ -348,7 +354,7 @@ fn process_and_push_unit(
     for _ in 0..exponent {
         chosen_vec.push(id);
     }
-    true
+    return true
 }
 
 fn extract_elements(chemical: &str, aliases: &HashMap<String, usize>) -> Vec<(usize, u16)>{
@@ -404,13 +410,15 @@ fn convert_quantity_to_string(unit_ids: &HashMap<usize, Unit>, value: f64, numer
 }
 
 fn convert_multiple(
-    unit_ids: &HashMap<usize, Unit>,
-    generator: &IDGenerator,
+    unit_ids: &mut HashMap<usize, Unit>,
+    generator: &mut IDGenerator,
+    element_ids: &HashMap<usize, Element>,
     value: &f64,
     starting_numers: &Vec<usize>,
     starting_denoms: &Vec<usize>,
     ending_numers: &Vec<usize>,
-    ending_denoms: &Vec<usize>
+    ending_denoms: &Vec<usize>,
+    elements: Option<Vec<(usize, u16)>>
 )-> Option<(Vec<Step>, f64)> {
     if starting_numers.len() != ending_numers.len() {
         print!("Starting and ending numerators must be equal in length! ");
@@ -420,22 +428,85 @@ fn convert_multiple(
         print!("Starting and ending denominators must be equal in length! ");
         return None;
     }
-
+    insert_elements(generator, unit_ids, element_ids, elements);
     let graph = generate_graph(generator, unit_ids);
     let mut steps = Vec::<Step>::new();
     let mut running_answer = *value;
-
     for path in algorithm::find_paths_between(starting_numers, ending_numers, &graph) {
         add_steps(path, unit_ids, &mut running_answer, &mut steps, false);
     }
     for path in algorithm::find_paths_between(starting_denoms, ending_denoms, &graph) {
         add_steps(path, unit_ids, &mut running_answer, &mut steps, true);
     }
-
     match steps.len() {
         0 => None,
         1.. => Some((steps, running_answer))
     }
+}
+
+fn insert_elements(generator: &mut IDGenerator, unit_ids: &mut HashMap<usize, Unit>, element_ids: &HashMap<usize, Element>, elements: Option<Vec<(usize, u16)>>) {
+    let elements = match elements {
+        Some(elements) => elements,
+        None => return
+    };
+    let (molar_mass, name) = find_mm_and_name(&elements, element_ids).unwrap();
+    let mut moles_name = String::from("moles [");
+    moles_name.push_str(name.as_str());
+    moles_name.push(']');
+    let mut grams_name = String::from("grams [");
+    grams_name.push_str(name.as_str());
+    grams_name.push(']');
+    let mut parts_name = String::from("particles [");
+    parts_name.push_str(name.as_str());
+    parts_name.push(']');
+    let mut moles = Unit::new(moles_name, generator);
+    let mut grams = Unit::new(grams_name, generator);
+    let mut particles = Unit::new(parts_name, generator);
+    let moles_to_grams = Conversion::new(molar_mass, 1f64);
+    let moles_to_particles = Conversion::new(AVAGADROS_CONSTANT, 1f64);
+    grams.push_edge(&moles, moles_to_grams.inverse());
+    particles.push_edge(&moles, moles_to_particles.inverse());
+    moles.push_edge(&grams, moles_to_grams);
+    moles.push_edge(&particles, moles_to_particles);
+    moles.insert_into(unit_ids);
+    grams.insert_into(unit_ids);
+    particles.insert_into(unit_ids);
+}
+
+fn find_mm_and_name(elements: &Vec<(usize, u16)>, element_ids: &HashMap<usize, Element>) -> Result<(f64, String), String>{
+    let mut molar_mass = 0f64;
+    let mut name = String::new();
+    for (atomic_number, count) in elements {
+        match element_ids.get(atomic_number) {
+            None => return Err(format!("Atomic number {} is undefined in the given `element_ids`", atomic_number)),
+            Some(element) => {
+                molar_mass += element.molar_mass * f64::from(*count);
+                name.push_str(element.symbol.as_str());
+                name.push_str(subscript_number(*count).as_str())
+            }
+        };
+    }
+    Ok((molar_mass, name))
+}
+
+fn subscript_number(num: u16) -> String {
+    let mut subscript = String::new();
+    for char in num.to_string().chars() {
+        subscript.push(match char {
+            '0' => '₀',
+            '1' => '₁',
+            '2' => '₂',
+            '3' => '₃',
+            '4' => '₄',
+            '5' => '₅',
+            '6' => '₆',
+            '7' => '₇',
+            '8' => '₈',
+            '9' => '₉',
+            _ => panic!("All chars must be ascii digits when creating subscript")
+        })
+    }
+    subscript
 }
 
 fn generate_graph(generator: &IDGenerator, unit_ids: &HashMap<usize, Unit>) -> Vec<Vec<usize>> {
